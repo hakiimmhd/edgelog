@@ -168,6 +168,21 @@ label.f > span{display:flex;justify-content:space-between}
 #toast div{background:var(--text);color:var(--bg);padding:9px 14px;border-radius:8px;font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
 /* calendrier */
 .cal-nav{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.prot-row{padding:12px 0;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.prot-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.prot-head .num{font-family:var(--f-mono);font-weight:600}
+.prot-dot{width:10px;height:10px;border-radius:50%;flex:none}
+.prot-st{font-size:12px;padding:2px 8px;border-radius:99px;background:var(--panel-2);color:var(--muted)}
+.prot-st.warn{background:rgba(245,158,11,.15);color:#F5B841}.prot-st.bad{background:var(--loss-soft);color:var(--loss)}.prot-st.good{background:var(--win-soft);color:var(--win)}
+.prot-bar{position:relative;height:8px;border-radius:99px;background:var(--panel-2);overflow:visible}
+.prot-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:var(--accent)}
+.prot-bar em{position:absolute;top:-3px;width:2px;height:14px;background:var(--text);transform:translateX(-1px)}
+.prot-bar .half{position:absolute;top:-3px;width:1px;height:14px;background:var(--muted);opacity:.6}
+.prot-sub{font-size:12px}
+.prot-txt{font-size:13px}.prot-txt.warn{color:#F5B841}.prot-txt.bad{color:var(--loss)}.prot-txt.good{color:var(--win)}
+.prot-banner{display:flex;flex-direction:column;gap:2px;padding:10px 14px;border-radius:10px;margin-bottom:10px;font-size:13.5px;border:1px solid var(--line);background:var(--panel)}
+.prot-banner.warn{border-color:rgba(245,158,11,.5);background:rgba(245,158,11,.10)}.prot-banner.warn b{color:#F5B841}
+.prot-banner.bad{border-color:var(--loss);background:var(--loss-soft)}.prot-banner.bad b{color:var(--loss)}
+.prot-banner.good{border-color:var(--win);background:var(--win-soft)}.prot-banner.good b{color:var(--win)}
 .cal-step{display:flex;gap:6px;align-items:center;flex-wrap:nowrap}.cal-step .btn{flex:none}
 .cal-nav select{width:auto;min-width:0;flex:1 1 auto;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;text-transform:capitalize}
 .accdots{display:flex;gap:3px;flex-wrap:wrap}.accdots i{width:9px;height:9px;border-radius:50%;display:block;box-shadow:0 0 0 1px rgba(0,0,0,.25)}
@@ -758,7 +773,7 @@ function vDashboard(){
   const recent = [...list].sort(sortTrades).reverse().slice(0,8);
   return `
   <div class="page-head"><div><h1>Dashboard</h1><p>${s.n} trades · ${s.days.length} jour${s.days.length>1?"s":""} tradé${s.days.length>1?"s":""}</p></div><button class="btn primary" data-act="new-trade">+ Nouveau trade</button></div>
-  ${demoBanner()}${filterBar()}
+  ${protBanner()}${demoBanner()}${filterBar()}
   <div class="kpis">
     ${kpiTile("P&L net", money(s.net), `${moneyK(s.fees)} de frais`, "", cls(s.net))}
     ${kpiTile("Win rate", pct(s.winRate), `${s.wins} gagnants · ${s.losses} perdants`, `<div class="bar2"><i style="width:${isFinite(s.winRate)?s.winRate*100:0}%"></i></div>`)}
@@ -768,6 +783,7 @@ function vDashboard(){
     ${kpiTile("Jours verts", pct(s.dayWin), `${s.greenDays} / ${s.days.length} jours · DD max ${moneyK(-s.maxDD)}`)}
   </div>
   ${typeCompare()}
+  ${protCard()}
   ${sysCard()}
   <div class="grid g-main" style="margin-bottom:14px">
     <div class="card"><div class="card-head"><h2>P&L cumulé</h2><span class="muted num">${money(s.net)}</span></div><div class="chart-box"><canvas id="ch-cum"></canvas></div></div>
@@ -811,7 +827,7 @@ const SYS = {
   ],
   rules: [
     ["std","Contrat standard"],["ins","Instrument hors système"],["mesShort","Vente de MES"],["fri","Vendredi"],
-    ["ren","Renfort contre moi"],["news","News interdite"],["max","Plus de 3 trades / jour"],["stop","Après le stop journalier −400 $"],["risk","Risque > 200 $"]
+    ["ren","Renfort contre moi"],["news","News interdite"],["max","Plus de 3 trades / jour"],["stop","Après le stop journalier −400 $"],["risk","Risque > 200 $"],["pause","Trade pendant la pause 2 jours"],["protRisk","Mode protection : risque > 100 $"],["protMax","Mode protection : plus de 2 trades / jour"]
   ]
 };
 const REN = "Renfort contre moi";
@@ -832,6 +848,9 @@ function sysCheck(t, list){
   const cumBefore = before.filter(x => (x.exitTime||x.entryTime||"") <= (t.entryTime||"")).reduce((a,x)=>a+C(x).net,0);
   if (cumBefore <= SYS.dayStop) v.push("stop");
   const c = calc(t); if (c.risk > SYS.risk * 1.1) v.push("risk");
+  if (t.account) { const ps = acctState(t.account, tKey(t), t.date, list);
+    if (ps.status === "pause") v.push("pause");
+    if (ps.status === "prot") { if (c.risk > PROT.risk * 1.1) v.push("protRisk"); if (before.length >= PROT.maxTrades) v.push("protMax"); } }
   return v;
 }
 const sysLabel = k => (SYS.rules.find(r=>r[0]===k)||[k,k])[1];
@@ -840,10 +859,10 @@ function sysBadge(t, list){
   if (!v) return `<span class="muted" title="Système non appliqué (Démo)">—</span>`;
   return v.length ? `<span class="chip mis" title="${esc(v.map(sysLabel).join(" · "))}">⚠ ${v.length}</span>` : `<span class="chip long" title="Conforme au ${esc(SYS.name)}">✓</span>`;
 }
-function sysSize(ins, entry, stop){
+function sysSize(ins, entry, stop, risk = SYS.risk){
   const i = instr(ins); const d = Math.abs(num(entry) - num(stop));
   if (!i || !isFinite(d) || !d) return null;
-  return { dist: d, perC: d * Number(i.pv), n: Math.floor(SYS.risk / (d * Number(i.pv))) };
+  return { dist: d, perC: d * Number(i.pv), n: Math.floor(risk / (d * Number(i.pv))), risk };
 }
 function sysCard(){
   const all = allTrades();
@@ -873,15 +892,74 @@ function sysFormBox(){
   const list = allTrades();
   const t = { ...F, id: F.id };
   const v = sysCheck(t, list.filter(x => x.id !== F.id).concat([t]));
-  const sz = sysSize(F.instrument, F.entry, F.stop);
+  const ps = F.account && sysApplies(t) ? acctState(F.account, F.id ? tKey(F) : null, F.date, list.filter(x => x.id !== F.id)) : null;
+  const riskCap = ps && ps.status === "prot" ? PROT.risk : SYS.risk;
+  const sz = sysSize(F.instrument, F.entry, F.stop, riskCap);
   const cl = F.checklist || [];
   const applies = sysApplies(t);
   return `<div class="sec-title">${esc(SYS.name)}</div>
     <div class="card" style="padding:12px;background:var(--panel-2)">
       ${applies ? (v.length ? `<div style="margin-bottom:8px"><b class="neg">⚠ ${v.length} règle${v.length>1?"s":""} violée${v.length>1?"s":""} :</b> ${v.map(k=>`<span class="chip mis">${esc(sysLabel(k))}</span>`).join(" ")}</div>` : `<div style="margin-bottom:8px"><span class="chip long">✓ Conforme au système</span></div>`) : `<div class="muted" style="margin-bottom:8px;font-size:13px">Compte Démo : le système est affiché à titre indicatif.</div>`}
-      <div style="font-size:13px;margin-bottom:8px"><b>Taille max pour ${SYS.risk} $ de risque :</b> ${sz ? `<span class="num">${sz.n} contrat${sz.n>1?"s":""}</span> <span class="muted">(stop ${nf2.format(sz.dist)} pts = ${money(sz.perC,false)} par contrat)</span>${sz.n<1?' <span class="neg">· stop trop large, réduis-le ou passe ton tour</span>':""}${num(F.qty)>sz.n?' <span class="neg">· tu es au-dessus</span>':""}` : `<span class="muted">renseigne l'entrée et le stop</span>`}</div>
+      <div style="font-size:13px;margin-bottom:8px">${ps && ps.status !== "normal" ? `<div class="prot-banner ${PROT_TXT[ps.status][1]}" style="margin:0 0 8px"><b>${PROT_TXT[ps.status][0]} · ${money(ps.cum)} (plus haut ${money(ps.peak)})</b><span>${esc(PROT_TXT[ps.status][2])}${ps.status==="pause"?` ${fmtDateLong(ps.pauseUntil)} inclus.`:""}</span></div>` : ""}<b>Taille max pour ${riskCap} $ de risque :</b> ${sz ? `<span class="num">${sz.n} contrat${sz.n>1?"s":""}</span> <span class="muted">(stop ${nf2.format(sz.dist)} pts = ${money(sz.perC,false)} par contrat)</span>${sz.n<1?' <span class="neg">· stop trop large, réduis-le ou passe ton tour</span>':""}${num(F.qty)>sz.n?' <span class="neg">· tu es au-dessus</span>':""}` : `<span class="muted">renseigne l'entrée et le stop</span>`}</div>
       <div class="f"><span>Checklist avant d'entrer</span>${SYS.checklist.map((c,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:3px 0"><input type="checkbox" class="f-chk" data-i="${i}" ${cl.includes(c)?"checked":""}> <span>${esc(c)}</span></label>`).join("")}</div>
     </div>`;
+}
+/* ============ Mode protection (garder un compte en profit) ============ */
+const PROT = { half: 0.5, giveback: 0.5, minPeak: 1000, risk: 100, maxTrades: 2, pauseDays: 2 };
+function acctRules(name){ const m = String(name||"").match(/(\d+)\s*K/i); const k = m ? Number(m[1]) : 50; return k >= 150 ? { size:150000, target:9000, mll:4500 } : k >= 100 ? { size:100000, target:6000, mll:3000 } : { size:50000, target:3000, mll:2000 }; }
+const tKey = t => `${t.date||""} ${t.entryTime||""} ${t.id}`;
+function addTradingDays(iso, n){ const d = parseD(iso); let k = 0; while (k < n) { d.setDate(d.getDate()+1); const w = d.getDay(); if (w !== 0 && w !== 6) k++; } return isoD(d); }
+function acctState(name, beforeKey, onDate, list){
+  const r = acctRules(name);
+  const L = (list || allTrades()).filter(t => t.account === name && (!beforeKey || tKey(t) < beforeKey)).sort((a,b) => tKey(a).localeCompare(tKey(b)));
+  let cum = 0, peak = 0, peakDate = null, dropDate = null, blown = false, last = null;
+  for (const t of L) {
+    cum += C(t).net; last = t.date;
+    if (cum > peak) { peak = cum; peakDate = t.date; dropDate = null; }
+    if (peak >= PROT.minPeak && cum <= peak * (1 - PROT.giveback) && !dropDate) dropDate = t.date;
+    if (peak - cum >= r.mll) blown = true;
+  }
+  const when = onDate || todayISO();
+  const pauseUntil = dropDate ? addTradingDays(dropDate, PROT.pauseDays) : null;
+  let status = "normal";
+  if (blown) status = "grille";
+  else if (pauseUntil && when <= pauseUntil) status = "pause";
+  else if (peak >= r.target * PROT.half) status = "prot";
+  if (!blown && cum >= r.target) status = "objectif";
+  return { name, ...r, cum, peak, peakDate, dropDate, pauseUntil, status, last, n: L.length };
+}
+const PROT_TXT = {
+  normal: ["Normal", "", "Risque 200 $ · 3 trades max par jour"],
+  prot: ["Mode protection", "warn", "Tu as dépassé la moitié de l'objectif : risque 100 $ par trade, 2 trades max par jour. Ne cours pas après l'objectif."],
+  pause: ["Pause 2 jours", "bad", "Tu as rendu la moitié de ton plus haut gain : pas de trade avant le"],
+  grille: ["Limite atteinte", "bad", "Compte perdu : la perte max depuis le plus haut a été atteinte."],
+  objectif: ["Objectif atteint", "good", "Objectif atteint : arrête de trader ce compte et demande la validation."]
+};
+function protRow(s){
+  const [lbl, tone, txt] = PROT_TXT[s.status];
+  const pctCur = Math.max(0, Math.min(100, s.cum / s.target * 100)), pctPk = Math.max(0, Math.min(100, s.peak / s.target * 100));
+  return `<div class="prot-row">
+    <div class="prot-head"><span class="prot-dot" style="background:${accColor(s.name)}"></span><b>${esc(s.name)}</b><span class="prot-st ${tone}">${lbl}</span><span class="num ${cls(s.cum)}" style="margin-left:auto">${money(s.cum)}</span></div>
+    <div class="prot-bar" role="img" aria-label="Solde ${money(s.cum)}, plus haut ${money(s.peak)}, objectif ${money(s.target,false)}"><i style="width:${pctCur}%"></i>${s.peak>0?`<em style="left:${pctPk}%" title="Plus haut ${money(s.peak)}"></em>`:""}<span class="half" style="left:50%"></span></div>
+    <div class="prot-sub muted">Plus haut ${money(s.peak)}${s.peakDate?` le ${fmtDate(s.peakDate)}`:""} · objectif ${money(s.target,false)} · limite ${money(-s.mll,false)} depuis le plus haut</div>
+    <div class="prot-txt ${tone}">${esc(txt)}${s.status==="pause"?` ${fmtDateLong(s.pauseUntil)} inclus.`:""}</div>
+  </div>`;
+}
+function protAccounts(){
+  const names = [...new Set(allTrades().filter(t => SYS.types.includes(typeOf(t))).map(t => t.account).filter(Boolean))];
+  const st = names.map(n => acctState(n)).sort((a,b) => (b.last||"").localeCompare(a.last||""));
+  const cutoff = isoD(new Date(Date.now() - 30*864e5));
+  return st.filter(s => s.status !== "grille" && (s.last||"") >= cutoff);
+}
+function protBanner(){
+  const hot = protAccounts().filter(s => s.status === "prot" || s.status === "pause" || s.status === "objectif");
+  if (!hot.length) return "";
+  return hot.map(s => { const [lbl, tone, txt] = PROT_TXT[s.status]; return `<div class="prot-banner ${tone}" role="alert"><b>${lbl} · ${esc(s.name)}</b><span>${esc(txt)}${s.status==="pause"?` ${fmtDateLong(s.pauseUntil)} inclus.`:""}</span></div>`; }).join("");
+}
+function protCard(){
+  const act = protAccounts();
+  return `<div class="card" style="margin-bottom:14px"><div class="card-head"><h2>Mode protection</h2><span class="muted" style="font-size:12.5px">À +50 % de l'objectif : risque 100 $, 2 trades/jour · si tu rends 50 % du plus haut : pause 2 jours</span></div>
+    ${act.length ? act.map(protRow).join("") : `<p class="muted" style="margin:0">Aucun compte Challenge, Express ou Funded tradé ces 30 derniers jours.</p>`}</div>`;
 }
 function groupStats(list, keyFn){
   const g = {};
