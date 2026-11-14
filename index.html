@@ -743,6 +743,7 @@ function vDashboard(){
     ${kpiTile("Jours verts", pct(s.dayWin), `${s.greenDays} / ${s.days.length} jours · DD max ${moneyK(-s.maxDD)}`)}
   </div>
   ${typeCompare()}
+  ${sysCard()}
   <div class="grid g-main" style="margin-bottom:14px">
     <div class="card"><div class="card-head"><h2>P&L cumulé</h2><span class="muted num">${money(s.net)}</span></div><div class="chart-box"><canvas id="ch-cum"></canvas></div></div>
     <div class="card"><div class="card-head"><h2>Score trader</h2><span class="score-ring ${sc.total>=60?"pos":sc.total<40?"neg":""}">${nf0.format(sc.total)}</span></div><div class="chart-box"><canvas id="ch-radar"></canvas></div></div>
@@ -769,6 +770,93 @@ function typeCompare(){
   <div class="tbl-wrap"><table><thead><tr><th>Type</th><th class="r">Trades</th><th class="r">Jours</th><th class="r">Win rate</th><th class="r">Profit factor</th><th class="r">Gain / perte moy.</th><th class="r">Espérance</th><th class="r">DD max</th><th class="r">P&L net</th></tr></thead><tbody>
   ${rows.map(({ty,s}) => `<tr class="ty-row ${S.filter.type===ty?"on":""}" data-act="ftype" data-k="${esc(ty)}"><td>${tyChip(ty)}</td><td class="r num">${s.n}</td><td class="r num">${s.days.length}</td><td class="r num">${pct(s.winRate)}</td><td class="r num">${isFinite(s.pf)?nf2.format(s.pf):"—"}</td><td class="r num"><span class="pos">${moneyK(s.avgW)}</span> / <span class="neg">${moneyK(s.avgL)}</span></td><td class="r num ${cls(s.exp)}">${money(s.exp)}</td><td class="r num neg">${moneyK(-s.maxDD)}</td><td class="r num ${cls(s.net)}"><b>${money(s.net)}</b></td></tr>`).join("")}
   </tbody></table></div></div>`;
+}
+/* ============ Système Challenge v1 ============ */
+const SYS = {
+  id: "sys-challenge-v1", name: "Système Challenge v1",
+  types: ["Challenge","Express","Funded"], allowed: ["MES","MGC"],
+  risk: 200, maxTrades: 3, dayStop: -400, goal: 40,
+  okNews: ["CPI","FOMC","Claims"], badNews: ["ISM","NFP","PCE","PPI","ADP","JOLTS","GDP","Retail Sales"],
+  checklist: [
+    "Calendrier ForexFactory vérifié : aucune annonce rouge interdite dans les 30 min",
+    "Dans le sens de la tendance du jour",
+    "Stop posé à l'entrée, taille calculée pour 200 $ de risque",
+    "Objectif d'au moins 2R",
+    "Une seule entrée : aucun renfort prévu"
+  ],
+  rules: [
+    ["std","Contrat standard"],["ins","Instrument hors système"],["mesShort","Vente de MES"],["fri","Vendredi"],
+    ["ren","Renfort contre moi"],["news","News interdite"],["max","Plus de 3 trades / jour"],["stop","Après le stop journalier −400 $"],["risk","Risque > 200 $"]
+  ]
+};
+const REN = "Renfort contre moi";
+const sysApplies = t => SYS.types.includes(typeOf(t));
+const isMicroSym = s => /^(MES|MNQ|MGC|MYM|M2K|MCL|MBT|M6A|M6B|M6E|MJY|MNG|MSI|MHG)$/.test(String(s||""));
+function sysCheck(t, list){
+  if (!sysApplies(t)) return null;
+  const v = [];
+  const sym = t.instrument;
+  if (!isMicroSym(sym)) v.push("std"); else if (!SYS.allowed.includes(sym)) v.push("ins");
+  if (sym === "MES" && t.side === "short") v.push("mesShort");
+  if (t.date && parseD(t.date).getDay() === 5) v.push("fri");
+  if ((t.tags||[]).includes(REN) || (t.mistakes||[]).includes(REN)) v.push("ren");
+  if ((t.tags||[]).some(x => SYS.badNews.some(n => x === "News : "+n))) v.push("news");
+  const day = (list || allTrades()).filter(x => x.date === t.date && x.account === t.account && x.id !== t.id && sysApplies(x));
+  const before = day.filter(x => (x.entryTime||"") < (t.entryTime||"") || ((x.entryTime||"") === (t.entryTime||"") && x.id < t.id));
+  if (before.length >= SYS.maxTrades) v.push("max");
+  const cumBefore = before.filter(x => (x.exitTime||x.entryTime||"") <= (t.entryTime||"")).reduce((a,x)=>a+C(x).net,0);
+  if (cumBefore <= SYS.dayStop) v.push("stop");
+  const c = calc(t); if (c.risk > SYS.risk * 1.1) v.push("risk");
+  return v;
+}
+const sysLabel = k => (SYS.rules.find(r=>r[0]===k)||[k,k])[1];
+function sysBadge(t, list){
+  const v = sysCheck(t, list);
+  if (!v) return `<span class="muted" title="Système non appliqué (Démo)">—</span>`;
+  return v.length ? `<span class="chip mis" title="${esc(v.map(sysLabel).join(" · "))}">⚠ ${v.length}</span>` : `<span class="chip long" title="Conforme au ${esc(SYS.name)}">✓</span>`;
+}
+function sysSize(ins, entry, stop){
+  const i = instr(ins); const d = Math.abs(num(entry) - num(stop));
+  if (!i || !isFinite(d) || !d) return null;
+  return { dist: d, perC: d * Number(i.pv), n: Math.floor(SYS.risk / (d * Number(i.pv))) };
+}
+function sysCard(){
+  const all = allTrades();
+  const list = applyFilterNoType(all).filter(sysApplies);
+  if (!list.length) return "";
+  const rows = list.map(t => ({ t, v: sysCheck(t, all) }));
+  const ok = rows.filter(r => !r.v.length).map(r=>r.t), bad = rows.filter(r => r.v.length).map(r=>r.t);
+  const so = stats(ok), sb = stats(bad);
+  const start = S.settings.sysStart || "2026-11-16";
+  const fw = rows.filter(r => r.t.date >= start); const fwOk = fw.filter(r=>!r.v.length).length; const sf = stats(fw.map(r=>r.t));
+  const byRule = SYS.rules.map(([k,l]) => { const ts = rows.filter(r => r.v.includes(k)).map(r=>r.t); return { k, l, n: ts.length, net: ts.reduce((a,t)=>a+C(t).net,0) }; }).filter(x=>x.n).sort((a,b)=>a.net-b.net);
+  const pf = s => isFinite(s.pf) ? nf2.format(s.pf) : s.pf===Infinity ? "∞" : "—";
+  const prog = Math.min(100, Math.round(fw.length / SYS.goal * 100));
+  return `<div class="card" style="margin-bottom:14px">
+    <div class="card-head"><h2>${esc(SYS.name)} <span class="muted" style="font-weight:400;font-size:13px">· Challenge, Express, Funded</span></h2><a href="#playbook">Voir les règles</a></div>
+    <div class="kpis" style="margin-bottom:10px">
+      ${kpiTile("Respect des règles", pct(ok.length/list.length), `${ok.length} conformes / ${list.length} trades`, `<div class="bar2"><i style="width:${ok.length/list.length*100}%"></i></div>`)}
+      ${kpiTile("P&L conformes", money(so.net), `${so.n} trades · win ${pct(so.winRate)} · PF ${pf(so)}`, "", cls(so.net))}
+      ${kpiTile("P&L hors règles", money(sb.net), `${sb.n} trades · win ${pct(sb.winRate)} · PF ${pf(sb)}`, "", cls(sb.net))}
+      ${kpiTile("Checkpoint", `${fw.length} / ${SYS.goal}`, fw.length ? `depuis le ${fmtDate(start)} · respect ${pct(fwOk/fw.length)} · PF ${pf(sf)}` : `démarre le ${fmtDate(start)}`, `<div class="bar2"><i style="width:${prog}%"></i></div>`)}
+    </div>
+    ${byRule.length ? `<div class="tbl-wrap"><table><thead><tr><th>Règle violée</th><th class="r">Trades</th><th class="r">P&L de ces trades</th></tr></thead><tbody>${byRule.map(x=>`<tr><td><span class="chip mis">${esc(x.l)}</span></td><td class="r num">${x.n}</td><td class="r num ${cls(x.net)}">${money(x.net)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">Aucune violation sur la période. Continue.</p>`}
+    <p class="muted" style="font-size:12px;margin:8px 0 0">Checkpoint à ${SYS.goal} trades : si le profit factor reste au-dessus de 1,3 avec au moins 90 % de règles respectées, passe à 300 $ de risque après +1 000 $ de coussin.</p>
+  </div>`;
+}
+function sysFormBox(){
+  const list = allTrades();
+  const t = { ...F, id: F.id };
+  const v = sysCheck(t, list.filter(x => x.id !== F.id).concat([t]));
+  const sz = sysSize(F.instrument, F.entry, F.stop);
+  const cl = F.checklist || [];
+  const applies = sysApplies(t);
+  return `<div class="sec-title">${esc(SYS.name)}</div>
+    <div class="card" style="padding:12px;background:var(--panel-2)">
+      ${applies ? (v.length ? `<div style="margin-bottom:8px"><b class="neg">⚠ ${v.length} règle${v.length>1?"s":""} violée${v.length>1?"s":""} :</b> ${v.map(k=>`<span class="chip mis">${esc(sysLabel(k))}</span>`).join(" ")}</div>` : `<div style="margin-bottom:8px"><span class="chip long">✓ Conforme au système</span></div>`) : `<div class="muted" style="margin-bottom:8px;font-size:13px">Compte Démo : le système est affiché à titre indicatif.</div>`}
+      <div style="font-size:13px;margin-bottom:8px"><b>Taille max pour ${SYS.risk} $ de risque :</b> ${sz ? `<span class="num">${sz.n} contrat${sz.n>1?"s":""}</span> <span class="muted">(stop ${nf2.format(sz.dist)} pts = ${money(sz.perC,false)} par contrat)</span>${sz.n<1?' <span class="neg">· stop trop large, réduis-le ou passe ton tour</span>':""}${num(F.qty)>sz.n?' <span class="neg">· tu es au-dessus</span>':""}` : `<span class="muted">renseigne l'entrée et le stop</span>`}</div>
+      <div class="f"><span>Checklist avant d'entrer</span>${SYS.checklist.map((c,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:3px 0"><input type="checkbox" class="f-chk" data-i="${i}" ${cl.includes(c)?"checked":""}> <span>${esc(c)}</span></label>`).join("")}</div>
+    </div>`;
 }
 function groupStats(list, keyFn){
   const g = {};
@@ -841,13 +929,13 @@ function vTrades(){
     <label class="muted" for="tf-to">au</label><input type="date" id="tf-to" value="${esc(f.to)}">
   </div>
   <div class="card" style="padding:4px 8px">${list.length ? `<div class="tbl-wrap"><table>
-    <thead><tr><th>Date</th><th>Heure</th><th>Instrument</th><th>Sens</th><th class="r">Qté</th><th class="r">Entrée</th><th class="r">Sortie</th><th class="r">P&L net</th><th class="r">R</th><th>Compte</th><th>Setup</th><th>Erreurs</th><th>Note</th><th></th></tr></thead>
+    <thead><tr><th>Date</th><th>Heure</th><th>Instrument</th><th>Sens</th><th class="r">Qté</th><th class="r">Entrée</th><th class="r">Sortie</th><th class="r">P&L net</th><th class="r">R</th><th>Compte</th><th>Setup</th><th>Règles</th><th>Erreurs</th><th>Note</th><th></th></tr></thead>
     <tbody>${list.map(t => { const c = C(t); return `<tr class="click" data-act="open" data-id="${esc(t.id)}">
       <td class="num">${fmtDate(t.date)}</td><td class="num muted">${esc(t.entryTime||"")}</td><td><b>${esc(t.instrument)}</b></td>
       <td><span class="chip ${t.side}">${t.side==="long"?"Long":"Short"}</span></td><td class="r num">${esc(t.qty)}</td>
       <td class="r num">${isFinite(num(t.entry))?esc(t.entry):"—"}</td><td class="r num">${isFinite(num(t.exit))?esc(t.exit):"—"}</td>
       <td class="r num ${cls(c.net)}"><b>${money(c.net)}</b></td><td class="r num ${cls(c.r)}">${c.r!=null?nf2.format(c.r)+"R":"—"}</td>
-      <td>${tyChip(typeOf(t))} <span class="muted" style="font-size:12px">${esc((t.account||"").replace(/^(Démo|Challenge|Express|Funded)\s*/,""))}</span></td><td>${esc(setupName(t.setup))}</td><td>${(t.mistakes||[]).map(m=>`<span class="chip mis">${esc(m)}</span>`).join(" ")}</td>
+      <td>${tyChip(typeOf(t))} <span class="muted" style="font-size:12px">${esc((t.account||"").replace(/^(Démo|Challenge|Express|Funded)\s*/,""))}</span></td><td>${esc(setupName(t.setup))}</td><td>${sysBadge(t)}</td><td>${(t.mistakes||[]).map(m=>`<span class="chip mis">${esc(m)}</span>`).join(" ")}</td>
       <td>${starsRO(t.rating)}</td><td class="muted">${(t.images||[]).length?`<span title="captures">▣ ${(t.images||[]).length}</span>`:""}</td></tr>`; }).join("")}</tbody></table></div>` : `<div class="empty">Aucun trade ne correspond à ces filtres.</div>`}</div>`;
 }
 function starsRO(n){ n = Number(n)||0; return `<span class="stars ro" aria-label="${n} sur 5">${[1,2,3,4,5].map(i=>`<span class="${i<=n?"on":""}">★</span>`).join("")}</span>`; }
@@ -1004,6 +1092,7 @@ function renderDrawer(){
     </div>
     <div class="sec-title">Contexte</div>
     <div class="chips">${t.followedPlan===true?'<span class="chip long">Plan respecté</span>':t.followedPlan===false?'<span class="chip short">Hors plan</span>':""}${t.emotion?`<span class="chip acc">${esc(t.emotion)}</span>`:""}${(t.tags||[]).map(x=>`<span class="chip">${esc(x)}</span>`).join("")}${(t.mistakes||[]).map(x=>`<span class="chip mis">${esc(x)}</span>`).join("")}</div>
+    ${(()=>{ const v = sysCheck(t); if (!v) return ""; const cl = t.checklist||[]; return `<div class="sec-title">${esc(SYS.name)}</div><div class="chips">${v.length ? v.map(k=>`<span class="chip mis">⚠ ${esc(sysLabel(k))}</span>`).join("") : `<span class="chip long">✓ Conforme</span>`}${cl.length?`<span class="chip">Checklist ${cl.length}/${SYS.checklist.length}</span>`:""}</div>`; })()}
     <div class="sec-title">Captures d'écran (${imgs.length})</div>
     ${imgs.length ? `<div class="shots">${imgs.map((im,i)=>`<img ${srcAttr(im)} alt="Capture ${i+1}" data-act="lb" data-set="trade" data-id="${esc(t.id)}" data-i="${i}">`).join("")}</div>` : `<p class="muted">Aucune capture. Clique sur Modifier pour en ajouter.</p>`}
     <div class="sec-title">Notes</div>
@@ -1031,7 +1120,7 @@ function renderForm(){
   const st = S.settings; const ins = st.instruments.map(i=>({v:i.sym,l:i.sym+(i.name?" · "+i.name:"")}));
   if (!ins.find(i=>i.v===F.instrument)) ins.push({v:F.instrument,l:F.instrument});
   const accs = [...new Set(st.accounts.concat(F.account?[F.account]:[]))];
-  const mis = [...new Set(st.mistakes.concat(F.mistakes))], tags = [...new Set(st.tags.concat(F.tags))];
+  const mis = [...new Set(st.mistakes.concat([REN], F.mistakes))], tags = [...new Set(st.tags.concat(F.tags))];
   const setups = S.setups.map(s=>({v:s.id,l:s.name}));
   $("#modal-root").innerHTML = `<div class="overlay" data-act="modal-bg"><div class="modal" role="dialog" aria-label="Trade">
     <div class="modal-head"><h1>${F._isNew?"Nouveau trade":"Modifier le trade"}</h1><button class="btn ghost" data-act="modal-close" aria-label="Fermer">✕</button></div>
@@ -1063,6 +1152,7 @@ function renderForm(){
       <div class="f span4"><span>Erreurs</span><div class="chips">${mis.map(m=>`<span class="chip toggle-chip misc ${F.mistakes.includes(m)?"on":""}" data-act="tog" data-k="mistakes" data-v="${esc(m)}" tabindex="0" role="button">${esc(m)}</span>`).join("")}</div></div>
       <div class="f span4"><span>Tags <small>(annonce macro, contexte…)</small></span><div class="chips">${tags.map(m=>`<span class="chip toggle-chip ${F.tags.includes(m)?"on":""}" data-act="tog" data-k="tags" data-v="${esc(m)}" tabindex="0" role="button">${esc(m)}</span>`).join("")}<input type="text" id="f-newtag" placeholder="+ tag" style="width:110px;padding:2px 8px;border-radius:999px;font-size:12px"></div></div>
     </div>
+    <div id="f-sys"></div>
     <div class="sec-title">Captures d'écran</div>
     <div class="thumb-row" id="f-imgs"></div>
     <div class="drop" id="f-drop" data-act="pick" style="margin-top:8px"><b>Glisse tes captures ici, colle-les (⌘V)</b> ou clique pour choisir des fichiers<div id="f-up" class="muted" style="font-size:12px"></div></div>
@@ -1084,10 +1174,12 @@ function readForm(){
   F._manual = $("#f-man").checked; F.pnlManual = F._manual && $("#f-pnl").value !== "" ? Number($("#f-pnl").value) : null;
   F.setup = $("#f-setup").value; F.emotion = $("#f-emo").value; const p = $("#f-plan").value; F.followedPlan = p===""?null:p==="true";
   F.notes = $("#f-notes").value;
+  if ($$(".f-chk").length) F.checklist = $$(".f-chk").filter(x=>x.checked).map(x=>SYS.checklist[Number(x.dataset.i)]);
 }
 function updatePreview(){
   if (!$("#f-prev")) return;
   readForm(); const c = calc(F); const auto = calc({...F, pnlManual:null});
+  const fs = $("#f-sys"); if (fs) fs.innerHTML = sysFormBox();
   $("#f-prev").innerHTML = `<div><small class="muted">P&L net</small><div class="num ${cls(c.net)}">${money(c.net)}</div></div>
     <div><small class="muted">Points</small><div class="num">${isFinite(auto.pts)?nf2.format(auto.pts):"—"}</div></div>
     <div><small class="muted">Brut</small><div class="num">${isFinite(auto.gross)?money(auto.gross):"—"}</div></div>
@@ -1102,7 +1194,7 @@ async function submitTrade(){
   if (!(num(F.qty) > 0)) return err("Indique le nombre de contrats.");
   if (!F._manual && (!isFinite(num(F.entry)) || !isFinite(num(F.exit)))) return err("Indique les prix d'entrée et de sortie, ou corrige le P&L à la main.");
   if (F._manual && F.pnlManual === null) return err("Indique le P&L net corrigé.");
-  const t = {}; ["id","date","entryTime","exitTime","instrument","side","entry","exit","qty","stop","target","fees","pnlManual","account","accountType","setup","mistakes","tags","emotion","rating","followedPlan","notes","images"].forEach(k => t[k] = F[k]);
+  const t = {}; ["id","date","entryTime","exitTime","instrument","side","entry","exit","qty","stop","target","fees","pnlManual","account","accountType","setup","mistakes","tags","emotion","rating","followedPlan","notes","images","checklist"].forEach(k => { if (F[k] !== undefined) t[k] = F[k]; });
   if (F.source) t.source = F.source;
   const btn = $('[data-act="save-trade"]'); btn.disabled = true; btn.textContent = "Enregistrement…";
   const removed = F._removed || [];
@@ -1163,7 +1255,7 @@ document.addEventListener("click", async e => {
     case "modal-bg": if (e.target === el) closeModal(); break;
     case "side": F.side = el.dataset.k; $$('[data-act="side"]').forEach(b=>b.classList.toggle("on", b===el)); updatePreview(); break;
     case "star": F.rating = Number(el.dataset.k) === F.rating ? 0 : Number(el.dataset.k); $$("#f-stars button").forEach((b,i)=>b.classList.toggle("on", i < F.rating)); break;
-    case "tog": { const arr = F[el.dataset.k]; const v = el.dataset.v; const i = arr.indexOf(v); if (i>=0) arr.splice(i,1); else arr.push(v); el.classList.toggle("on"); break; }
+    case "tog": { const arr = F[el.dataset.k]; const v = el.dataset.v; const i = arr.indexOf(v); if (i>=0) arr.splice(i,1); else arr.push(v); el.classList.toggle("on"); updatePreview(); break; }
     case "f-rmimg": e.stopPropagation(); (F._removed = F._removed || []).push(...F.images.splice(Number(el.dataset.i),1)); renderFormImgs(); break;
     case "s-rmimg": e.stopPropagation(); SF.images.splice(Number(el.dataset.i),1); SF._ri(); break;
     case "j-rmimg": { e.stopPropagation(); const prev = S.days[S.jDate]||{}; S.jImgs = (S.jImgs || prev.images || []).slice(); S.jImgs.splice(Number(el.dataset.i),1); el.parentElement.remove(); $("#j-msg").textContent = "Capture retirée : pense à enregistrer."; break; }
@@ -1233,7 +1325,8 @@ document.addEventListener("change", async e => {
   if (id === "f-ins") { if (!F._feesTouched) { readForm(); $("#f-fees").value = autoFee(); } updatePreview(); }
   if (id === "flt-acc") { S.filter.account = e.target.value; render(); }
   if (id === "flt-ins") { S.filter.instrument = e.target.value; render(); }
-  if (id === "f-acc") { const g = guessType(e.target.value); if (g) $("#f-type").value = g; }
+  if (id === "f-acc") { const g = guessType(e.target.value); if (g) $("#f-type").value = g; if (F) updatePreview(); }
+  if (F && (id === "f-type" || id === "f-date" || id === "f-et" || id === "f-xt")) updatePreview();
   if (id === "tf-setup") { S.tfilter.setup = e.target.value; render(); }
   if (id === "tf-res") { S.tfilter.result = e.target.value; render(); }
   if (id === "tf-from") { S.tfilter.from = e.target.value; render(); }
@@ -1274,7 +1367,7 @@ async function importJSON(file){
     const items = [];
     for (const x of setups) { const b = clone(x); delete b.id; b.images = await fix(x.images); items.push({ kind:"setup", id:x.id, data:b }); }
     for (const [k,v] of days) { const prev = (S.days[k]||{}); const b = clone(prev); delete b.date; for (const [kk,vv] of Object.entries(v)) { if (kk === "images" || kk === "date") continue; if (vv !== "" && vv != null && (b[kk] === undefined || b[kk] === "" || b[kk] === 0)) b[kk] = vv; } const added = await fix(v.images, prev.images||[]); b.images = (prev.images||[]).filter(p => !added.includes(p)).concat(added); items.push({ kind:"day", id:k, data:b }); }
-    for (const t of trades) { const b = clone(t); delete b.id; delete b.demo; const prevT = S.trades.find(x => x.id === t.id) || {}; const kept = (prevT.images||[]).filter(p => !p.name); b.images = kept.concat(await fix(t.images, prevT.images||[])); for (const k of ["setup","mistakes","emotion","rating","followedPlan","notes","stop","target"]) if (prevT[k] !== undefined && prevT[k] !== "" && !(Array.isArray(prevT[k]) && !prevT[k].length) && prevT[k] !== 0 && prevT[k] !== null) b[k] = prevT[k]; items.push({ kind:"trade", id:t.id, data:b }); }
+    for (const t of trades) { const b = clone(t); delete b.id; delete b.demo; const prevT = S.trades.find(x => x.id === t.id) || {}; const kept = (prevT.images||[]).filter(p => !p.name); b.images = kept.concat(await fix(t.images, prevT.images||[])); b.tags = [...new Set((b.tags||[]).concat((prevT.tags||[]).filter(x => x !== "À vérifier" && !/^News : |^Annonce macro$/.test(x))))]; for (const k of ["setup","mistakes","emotion","rating","followedPlan","notes","stop","target","checklist"]) if (prevT[k] !== undefined && prevT[k] !== "" && !(Array.isArray(prevT[k]) && !prevT[k].length) && prevT[k] !== 0 && prevT[k] !== null) b[k] = prevT[k]; items.push({ kind:"trade", id:t.id, data:b }); }
     putMany(items);
     closeModal();
     toast(`${trades.length} trades et ${days.length} journaux importés${failed?`, ${failed} captures en échec`:""}. Synchronisation en cours.`);
