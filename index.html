@@ -1019,7 +1019,7 @@ function vCalendar(){
       if (dd) { wk.pnl += dd.pnl; wk.n += dd.n; wk.days++; }
       const k = dd ? (dd.pnl>0?"win":dd.pnl<0?"loss":"") : "";
       const accs = dd ? dayAccounts(tByDay[iso]||[]) : [];
-      const stripe = accs.length ? `style="border:2px solid ${accColor(accs[0])}"` : "";
+      const stripe = accs.length ? `style="border-color:${accColor(accs[0])}"` : "";
       cells += `<button class="cday ${inM?"":"out"} ${k} ${iso===today?"today":""}" ${stripe} data-act="day" data-d="${iso}" aria-label="${fmtDateLong(iso)}${accs.length?" · "+esc(accs.join(", ")):""}">
         <span class="dn">${d.getDate()}</span>
         ${dd ? `<span class="p ${cls(dd.pnl)}">${moneyK(dd.pnl)}</span><span class="m">${dd.n} trade${dd.n>1?"s":""} · ${pct(dd.w/(dd.w+dd.l||1))}</span>` : ""}
@@ -1060,7 +1060,7 @@ function vCalAll(all, months){
     for (let day=1; day<=nd; day++) {
       const iso = `${k}-${String(day).padStart(2,"0")}`; const dd = byDay[iso];
       const accs = dd ? dayAccounts(tByDay[iso]) : [];
-      g += `<span class="md ${dd?(dd.pnl>0?"win":dd.pnl<0?"loss":"flat"):""}" ${accs.length?`style="box-shadow:inset 0 0 0 2px ${accColor(accs[0])}"`:""} title="${dd?`${fmtDateLong(iso)} : ${money(dd.pnl)} · ${esc(accs.join(", "))}`:""}">${day}</span>`;
+      g += `<span class="md ${dd?(dd.pnl>0?"win":dd.pnl<0?"loss":"flat"):""}" ${accs.length?`style="box-shadow:inset 0 0 0 1px ${accColor(accs[0])}"`:""} title="${dd?`${fmtDateLong(iso)} : ${money(dd.pnl)} · ${esc(accs.join(", "))}`:""}">${day}</span>`;
     }
     const accs = accSummary(L);
     return `<button class="mcard" data-act="calgo" data-k="${k}" aria-label="Ouvrir ${MOIS[mm-1]} ${yy}">
