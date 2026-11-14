@@ -812,22 +812,22 @@ function typeCompare(){
   ${rows.map(({ty,s}) => `<tr class="ty-row ${S.filter.type===ty?"on":""}" data-act="ftype" data-k="${esc(ty)}"><td>${tyChip(ty)}</td><td class="r num">${s.n}</td><td class="r num">${s.days.length}</td><td class="r num">${pct(s.winRate)}</td><td class="r num">${isFinite(s.pf)?nf2.format(s.pf):"—"}</td><td class="r num"><span class="pos">${moneyK(s.avgW)}</span> / <span class="neg">${moneyK(s.avgL)}</span></td><td class="r num ${cls(s.exp)}">${money(s.exp)}</td><td class="r num neg">${moneyK(-s.maxDD)}</td><td class="r num ${cls(s.net)}"><b>${money(s.net)}</b></td></tr>`).join("")}
   </tbody></table></div></div>`;
 }
-/* ============ Système Challenge v1 ============ */
+/* ============ Plan v2 — News + Zone ============ */
 const SYS = {
-  id: "sys-challenge-v1", name: "Système Challenge v1",
-  types: ["Challenge","Express","Funded"], allowed: ["MES","MGC"],
-  risk: 200, maxTrades: 3, dayStop: -400, goal: 40,
-  okNews: ["CPI","FOMC","Claims"], badNews: ["ISM","NFP","PCE","PPI","ADP","JOLTS","GDP","Retail Sales"],
+  id: "sys-v2", name: "Plan v2 — News + Zone",
+  types: ["Challenge","Express","Funded"], allowed: ["MES","MGC","6A","M6A"],
+  risk: 250, maxQty: 5, maxTrades: 2, dayStop: -400, goal: 20,
+  okNews: [], badNews: [],
   checklist: [
-    "Calendrier ForexFactory vérifié : aucune annonce rouge interdite dans les 30 min",
-    "Dans le sens de la tendance du jour",
-    "Stop posé à l'entrée, taille calculée pour 200 $ de risque",
-    "Objectif d'au moins 2R",
-    "Une seule entrée : aucun renfort prévu"
+    "Setup A (News) : résultat publié ET clair dans un sens, entrée après la bougie de news — OU Setup B (Zone) : prix sur une zone clé (haut/bas de range, plus haut/bas hebdo) qui se fait respecter + déclencheur (BOS, rejet, ouverture)",
+    "Stop posé à l'entrée, risque ≤ 250 $, 5 micros max",
+    "TP sur une zone du graphique (mid-range, liquidité), pas sur un montant — au moins 1,5R",
+    "Après l'entrée : je quitte l'écran, SL au BE seulement après +1R",
+    "Si j'ai déjà perdu aujourd'hui : la page du carnet est écrite avant ce trade"
   ],
   rules: [
-    ["std","Contrat standard"],["ins","Instrument hors système"],["mesShort","Vente de MES"],["fri","Vendredi"],
-    ["ren","Renfort contre moi"],["news","News interdite"],["max","Plus de 3 trades / jour"],["stop","Après le stop journalier −400 $"],["risk","Risque > 200 $"],["pause","Trade pendant la pause 2 jours"],["protRisk","Mode protection : risque > 100 $"],["protMax","Mode protection : plus de 2 trades / jour"]
+    ["std","Contrat standard"],["ins","Instrument hors plan"],["qty","Plus de 5 contrats"],["fri","Vendredi"],
+    ["ren","Renfort contre moi"],["max","Plus de 2 trades / jour"],["stop","Après le stop journalier −400 $"],["risk","Risque > 250 $"],["pause","Trade pendant la pause 2 jours"],["protRisk","Mode protection : risque > 100 $"],["protMax","Mode protection : plus de 2 trades / jour"]
   ]
 };
 const REN = "Renfort contre moi";
@@ -837,8 +837,8 @@ function sysCheck(t, list){
   if (!sysApplies(t)) return null;
   const v = [];
   const sym = t.instrument;
-  if (!isMicroSym(sym)) v.push("std"); else if (!SYS.allowed.includes(sym)) v.push("ins");
-  if (sym === "MES" && t.side === "short") v.push("mesShort");
+  if (!SYS.allowed.includes(sym)) v.push(isMicroSym(sym) ? "ins" : "std");
+  if (Number(t.qty) > SYS.maxQty) v.push("qty");
   if (t.date && parseD(t.date).getDay() === 5) v.push("fri");
   if ((t.tags||[]).includes(REN) || (t.mistakes||[]).includes(REN)) v.push("ren");
   if ((t.tags||[]).some(x => SYS.badNews.some(n => x === "News : "+n))) v.push("news");
@@ -885,7 +885,7 @@ function sysCard(){
       ${kpiTile("Checkpoint", `${fw.length} / ${SYS.goal}`, fw.length ? `depuis le ${fmtDate(start)} · respect ${pct(fwOk/fw.length)} · PF ${pf(sf)}` : `démarre le ${fmtDate(start)}`, `<div class="bar2"><i style="width:${prog}%"></i></div>`)}
     </div>
     ${byRule.length ? `<div class="tbl-wrap"><table><thead><tr><th>Règle violée</th><th class="r">Trades</th><th class="r">P&L de ces trades</th></tr></thead><tbody>${byRule.map(x=>`<tr><td><span class="chip mis">${esc(x.l)}</span></td><td class="r num">${x.n}</td><td class="r num ${cls(x.net)}">${money(x.net)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">Aucune violation sur la période. Continue.</p>`}
-    <p class="muted" style="font-size:12px;margin:8px 0 0">Checkpoint à ${SYS.goal} trades : si le profit factor reste au-dessus de 1,3 avec au moins 90 % de règles respectées, passe à 300 $ de risque après +1 000 $ de coussin.</p>
+    <p class="muted" style="font-size:12px;margin:8px 0 0">Checkpoint à ${SYS.goal} trades : si le profit factor reste au-dessus de 1,3 avec au moins 90 % de règles respectées, le plan est validé. Sinon, on corrige avant d’augmenter le risque.</p>
   </div>`;
 }
 function sysFormBox(){
@@ -929,7 +929,7 @@ function acctState(name, beforeKey, onDate, list){
   return { name, ...r, cum, peak, peakDate, dropDate, pauseUntil, status, last, n: L.length };
 }
 const PROT_TXT = {
-  normal: ["Normal", "", "Risque 200 $ · 3 trades max par jour"],
+  normal: ["Normal", "", "Risque 250 $ · 5 micros · 2 trades max par jour"],
   prot: ["Mode protection", "warn", "Tu as dépassé la moitié de l'objectif : risque 100 $ par trade, 2 trades max par jour. Ne cours pas après l'objectif."],
   pause: ["Pause 2 jours", "bad", "Tu as rendu la moitié de ton plus haut gain : pas de trade avant le"],
   grille: ["Limite atteinte", "bad", "Compte perdu : la perte max depuis le plus haut a été atteinte."],
