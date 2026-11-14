@@ -167,6 +167,31 @@ label.f > span{display:flex;justify-content:space-between}
 #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:50;display:flex;flex-direction:column;gap:6px;align-items:center}
 #toast div{background:var(--text);color:var(--bg);padding:9px 14px;border-radius:8px;font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
 /* calendrier */
+.cal-nav{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.cal-step{display:flex;gap:6px;align-items:center;flex-wrap:nowrap}.cal-step .btn{flex:none}
+.cal-nav select{width:auto;min-width:0;flex:1 1 auto;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;text-transform:capitalize}
+.accdots{display:flex;gap:3px;flex-wrap:wrap}.accdots i{width:9px;height:9px;border-radius:50%;display:block;box-shadow:0 0 0 1px rgba(0,0,0,.25)}
+.acc-legend{display:flex;flex-direction:column}
+.acc-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);flex-wrap:wrap}
+.acc-sw{width:22px;height:22px;border-radius:6px;position:relative;cursor:pointer;flex:none;box-shadow:0 0 0 1px rgba(0,0,0,.2)}
+.acc-sw input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.acc-name{background:none;border:0;color:var(--text);font:inherit;font-weight:600;cursor:pointer;padding:6px 0;text-align:left}
+.acc-name:hover{text-decoration:underline}
+.acc-dates{font-size:12.5px;flex:1;min-width:180px}
+.mcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.mcard{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;text-align:left;color:var(--text);font:inherit;cursor:pointer;display:flex;flex-direction:column;gap:8px}
+.mcard:hover{border-color:var(--muted)}
+.mtop{display:flex;justify-content:space-between;align-items:baseline;gap:8px}.mtop b{text-transform:capitalize}.mtop .num{font-family:var(--f-mono);font-weight:600}
+.mgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.mgrid span{font-size:10px;text-align:center;padding:4px 0;border-radius:4px;color:var(--muted)}
+.mgrid .mh{font-weight:600}
+.mgrid .md.win{background:var(--win-soft);color:var(--win);font-weight:600}
+.mgrid .md.loss{background:var(--loss-soft);color:var(--loss);font-weight:600}
+.mgrid .md.flat{background:var(--panel-2);color:var(--text)}
+.macc{display:flex;flex-wrap:wrap;gap:4px}
+.mchip{display:inline-flex;align-items:center;gap:5px;font-size:11px;background:var(--panel-2);border-radius:99px;padding:2px 8px 2px 5px}
+.mchip i{width:9px;height:9px;border-radius:50%;display:block}
+.mfoot{font-size:11.5px}
 .cal{display:grid;grid-template-columns:repeat(7,1fr) 1.05fr;gap:6px}
 .cal .hd{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600;padding:0 4px}
 .cday{min-height:92px;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:7px 8px;display:flex;flex-direction:column;gap:2px;cursor:pointer;text-align:left}
@@ -228,7 +253,7 @@ label.f > span{display:flex;justify-content:space-between}
   .j-layout{grid-template-columns:1fr}
   .j-list{max-height:220px}
   .cal{grid-template-columns:repeat(7,1fr);gap:3px} .cal .wk,.cal .hd.wk{display:none}
-  .cday{min-height:58px;padding:4px} .cday .m,.cday .ic{display:none} .cday .p{font-size:10.5px}
+  .cday{min-height:58px;padding:4px} .cday .m,.cday .ic{display:none} .accdots i{width:7px;height:7px} .cday .p{font-size:10.5px}
   .overlay{padding:0}
   .modal{border-radius:0;min-height:100%;border:0;padding:calc(14px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom))}
   .drawer{padding:calc(14px + env(safe-area-inset-top)) 16px calc(30px + env(safe-area-inset-bottom))}
@@ -941,10 +966,48 @@ function vTrades(){
 function starsRO(n){ n = Number(n)||0; return `<span class="stars ro" aria-label="${n} sur 5">${[1,2,3,4,5].map(i=>`<span class="${i<=n?"on":""}">★</span>`).join("")}</span>`; }
 
 /* ---- Calendrier ---- */
+/* ============ Calendrier : couleurs par compte, tous les mois ============ */
+const ACC_PALETTE = ["#F5C518","#22D3EE","#F472B6","#FB923C","#A78BFA","#60A5FA","#E879F9","#2DD4BF","#FDBA74","#818CF8","#FDE047","#38BDF8","#C084FC","#F9A8D4","#5EEAD4","#FCD34D"];
+const DEMO_PALETTE = ["#94A3B8","#CBD5E1","#64748B"];
+function accOrder(demo){
+  const first = {};
+  for (const t of allTrades()) if (t.account && (typeOf(t)==="Démo") === demo && (!first[t.account] || t.date < first[t.account])) first[t.account] = t.date;
+  return Object.keys(first).sort((a,b) => first[a].localeCompare(first[b]) || a.localeCompare(b));
+}
+function accColor(name){
+  const custom = (S.settings.accountColors||{})[name]; if (custom) return custom;
+  const t0 = allTrades().find(t => t.account === name); const demo = t0 ? typeOf(t0)==="Démo" : false;
+  const i = accOrder(demo).indexOf(name); const pal = demo ? DEMO_PALETTE : ACC_PALETTE;
+  return pal[(i<0?0:i) % pal.length];
+}
+function calList(){ const f = S.filter; return allTrades().filter(t => (!f.account || t.account===f.account) && (!f.instrument || t.instrument===f.instrument) && (!f.type || typeOf(t)===f.type)); }
+function tradedMonths(list){ return [...new Set(list.map(t => t.date.slice(0,7)))].sort(); }
+function accSummary(list){
+  const m = {};
+  for (const t of list) { const a = t.account||"—"; (m[a] = m[a] || { name:a, type:typeOf(t), n:0, net:0, from:t.date, to:t.date }); const x = m[a]; x.n++; x.net += C(t).net; if (t.date < x.from) x.from = t.date; if (t.date > x.to) x.to = t.date; }
+  return Object.values(m).sort((a,b) => a.from.localeCompare(b.from));
+}
+function accLegend(list){
+  const acc = accSummary(list); if (!acc.length) return "";
+  return `<div class="card" style="margin-top:14px"><div class="card-head"><h2>Comptes</h2><span class="muted" style="font-size:12.5px">clique une pastille pour changer sa couleur · clique un nom pour filtrer</span></div>
+  <div class="acc-legend">${acc.map(a => `<div class="acc-row"><label class="acc-sw" style="background:${accColor(a.name)}" title="Changer la couleur"><input type="color" class="acc-color" data-acc="${esc(a.name)}" value="${accColor(a.name)}" aria-label="Couleur du compte ${esc(a.name)}"></label>
+    <button class="acc-name" data-act="cal-acc" data-k="${esc(a.name)}">${esc(a.name)}</button>${tyChip(a.type)}
+    <span class="muted acc-dates">${fmtDate(a.from)} → ${fmtDate(a.to)} · ${a.n} trades</span><b class="num ${cls(a.net)}">${money(a.net)}</b></div>`).join("")}</div></div>`;
+}
+function dayAccounts(trades){
+  const m = {}; for (const t of trades) { const a = t.account||"—"; m[a] = (m[a]||0) + 1; }
+  return Object.entries(m).sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
+}
 function vCalendar(){
+  const all = calList();
+  const months = tradedMonths(all);
+  if (!S.calInit && months.length) { const last = months[months.length-1]; S.calMonth = new Date(Number(last.slice(0,4)), Number(last.slice(5,7))-1, 1); S.calInit = true; }
+  if (S.calView === "all") return vCalAll(all, months);
   const m = S.calMonth; const y = m.getFullYear(), mo = m.getMonth();
-  const list = applyFilter(allTrades()).filter(t => { const d=parseD(t.date); return d.getFullYear()===y && d.getMonth()===mo; });
+  const key = `${y}-${String(mo+1).padStart(2,"0")}`;
+  const list = all.filter(t => t.date.slice(0,7) === key);
   const s = stats(list); const byDay = {}; s.days.forEach(d=>byDay[d.date]=d);
+  const tByDay = {}; list.forEach(t => (tByDay[t.date] = tByDay[t.date] || []).push(t));
   const first = new Date(y, mo, 1); const start = new Date(y, mo, 1 - ((first.getDay()+6)%7));
   const today = todayISO();
   let cells = JOURS.map(j=>`<div class="hd">${j}</div>`).join("") + `<div class="hd wk">Semaine</div>`;
@@ -952,12 +1015,15 @@ function vCalendar(){
   while (true) {
     let wk = { pnl:0, n:0, days:0 };
     for (let i=0;i<7;i++) {
-      const iso = isoD(d), inM = d.getMonth()===mo, dd = byDay[iso], j = S.days[iso];
-      if (dd && inM) { wk.pnl += dd.pnl; wk.n += dd.n; wk.days++; }
+      const iso = isoD(d), inM = d.getMonth()===mo, dd = inM ? byDay[iso] : null, j = S.days[iso];
+      if (dd) { wk.pnl += dd.pnl; wk.n += dd.n; wk.days++; }
       const k = dd ? (dd.pnl>0?"win":dd.pnl<0?"loss":"") : "";
-      cells += `<button class="cday ${inM?"":"out"} ${k} ${iso===today?"today":""}" data-act="day" data-d="${iso}" aria-label="${fmtDateLong(iso)}">
+      const accs = dd ? dayAccounts(tByDay[iso]||[]) : [];
+      const stripe = accs.length ? `style="box-shadow:inset 4px 0 0 ${accColor(accs[0])}"` : "";
+      cells += `<button class="cday ${inM?"":"out"} ${k} ${iso===today?"today":""}" ${stripe} data-act="day" data-d="${iso}" aria-label="${fmtDateLong(iso)}${accs.length?" · "+esc(accs.join(", ")):""}">
         <span class="dn">${d.getDate()}</span>
         ${dd ? `<span class="p ${cls(dd.pnl)}">${moneyK(dd.pnl)}</span><span class="m">${dd.n} trade${dd.n>1?"s":""} · ${pct(dd.w/(dd.w+dd.l||1))}</span>` : ""}
+        ${accs.length ? `<span class="accdots">${accs.map(a=>`<i style="background:${accColor(a)}" title="${esc(a)}"></i>`).join("")}</span>` : ""}
         <span class="ic">${j && (j.premarket||j.review) ? "✎ journal" : ""}</span></button>`;
       d.setDate(d.getDate()+1);
     }
@@ -965,12 +1031,54 @@ function vCalendar(){
     cells += `<div class="cweek wk"><small>Semaine ${w}</small><b class="${cls(wk.pnl)}">${wk.n?money(wk.pnl):"—"}</b><small>${wk.days} jour${wk.days>1?"s":""} · ${wk.n} trades</small></div>`;
     if (d.getMonth() !== mo || d.getFullYear() !== y) break;
   }
+  const idx = months.indexOf(key);
+  const prevM = idx > 0 ? months[idx-1] : months.filter(x => x < key).pop();
+  const nextM = idx >= 0 && idx < months.length-1 ? months[idx+1] : months.find(x => x > key);
+  const mLabel = k => { const [yy,mm] = k.split("-"); return MOIS[Number(mm)-1] + " " + yy; };
   return `
   <div class="page-head"><div><h1>Calendrier</h1><p>${MOIS[mo]} ${y} · <span class="num ${cls(s.net)}">${money(s.net)}</span> · ${s.days.length} jour${s.days.length>1?"s":""} tradé${s.days.length>1?"s":""} · ${s.greenDays} verts</p></div>
-    <div style="display:flex;gap:6px"><button class="btn" data-act="cal" data-k="-1" aria-label="Mois précédent">‹</button><button class="btn" data-act="cal" data-k="0">Aujourd'hui</button><button class="btn" data-act="cal" data-k="1" aria-label="Mois suivant">›</button></div></div>
+    <div class="cal-nav">
+      <div class="seg" role="group" aria-label="Vue"><button class="on" data-act="calview" data-k="month">Mois</button><button data-act="calview" data-k="all">Tous les mois</button></div>
+      <div class="cal-step"><button class="btn" data-act="calgo" data-k="${prevM||""}" ${prevM?"":"disabled"} aria-label="Mois tradé précédent">‹</button>
+      <select id="cal-pick" aria-label="Choisir un mois">${months.slice().reverse().map(k=>`<option value="${k}" ${k===key?"selected":""}>${mLabel(k)}</option>`).join("")}${months.includes(key)?"":`<option selected>${MOIS[mo]} ${y}</option>`}</select>
+      <button class="btn" data-act="calgo" data-k="${nextM||""}" ${nextM?"":"disabled"} aria-label="Mois tradé suivant">›</button></div>
+    </div></div>
   ${demoBanner()}${filterBar()}
   <div class="cal">${cells}</div>
-  <p class="muted" style="margin-top:10px">Clique sur un jour pour ouvrir ses trades et son journal.</p>`;
+  <p class="muted" style="margin-top:10px">La bande de couleur à gauche de chaque jour = le compte principal du jour ; les pastilles = tous les comptes tradés ce jour-là. Clique sur un jour pour ouvrir ses trades et son journal.</p>
+  ${accLegend(list)}`;
+}
+function vCalAll(all, months){
+  const byMonth = {}; all.forEach(t => (byMonth[t.date.slice(0,7)] = byMonth[t.date.slice(0,7)] || []).push(t));
+  let cum = 0;
+  const cards = months.map(k => {
+    const L = byMonth[k]; const s = stats(L); cum += s.net;
+    const [yy,mm] = k.split("-").map(Number);
+    const byDay = {}; s.days.forEach(d=>byDay[d.date]=d);
+    const tByDay = {}; L.forEach(t => (tByDay[t.date] = tByDay[t.date] || []).push(t));
+    const first = new Date(yy, mm-1, 1); const off = (first.getDay()+6)%7; const nd = new Date(yy, mm, 0).getDate();
+    let g = JOURS.map(j=>`<span class="mh">${j[0]}</span>`).join("") + Array(off).fill('<span></span>').join("");
+    for (let day=1; day<=nd; day++) {
+      const iso = `${k}-${String(day).padStart(2,"0")}`; const dd = byDay[iso];
+      const accs = dd ? dayAccounts(tByDay[iso]) : [];
+      g += `<span class="md ${dd?(dd.pnl>0?"win":dd.pnl<0?"loss":"flat"):""}" ${accs.length?`style="box-shadow:inset 0 -3px 0 ${accColor(accs[0])}"`:""} title="${dd?`${fmtDateLong(iso)} : ${money(dd.pnl)} · ${esc(accs.join(", "))}`:""}">${day}</span>`;
+    }
+    const accs = accSummary(L);
+    return `<button class="mcard" data-act="calgo" data-k="${k}" aria-label="Ouvrir ${MOIS[mm-1]} ${yy}">
+      <div class="mtop"><b>${MOIS[mm-1]} ${yy}</b><span class="num ${cls(s.net)}">${money(s.net)}</span></div>
+      <div class="mgrid">${g}</div>
+      <div class="macc">${accs.map(a=>`<span class="mchip"><i style="background:${accColor(a.name)}"></i>${esc(a.name.replace(/^Challenge /,"Ch. ").replace(/^Express /,"Exp. ").replace(/ \(…/," …").replace(/\)$/,""))}</span>`).join("")}</div>
+      <div class="mfoot muted">${s.days.length} jours · ${s.n} trades · win ${pct(s.winRate)} · cumul <span class="num ${cls(cum)}">${moneyK(cum)}</span></div>
+    </button>`;
+  }).join("");
+  const s = stats(all);
+  return `
+  <div class="page-head"><div><h1>Calendrier</h1><p>Tous les mois tradés · ${months.length} mois · <span class="num ${cls(s.net)}">${money(s.net)}</span> · ${s.days.length} jours tradés</p></div>
+    <div class="cal-nav"><div class="seg" role="group" aria-label="Vue"><button data-act="calview" data-k="month">Mois</button><button class="on" data-act="calview" data-k="all">Tous les mois</button></div></div></div>
+  ${demoBanner()}${filterBar()}
+  ${months.length ? `<div class="mcards">${cards}</div>` : `<p class="muted">Aucun trade pour ces filtres.</p>`}
+  <p class="muted" style="margin-top:10px">Vert = jour gagnant, rouge = jour perdant. Le trait de couleur sous chaque jour = le compte utilisé. Clique sur un mois pour l'ouvrir.</p>
+  ${accLegend(all)}`;
 }
 
 /* ---- Journal quotidien ---- */
@@ -1271,6 +1379,9 @@ document.addEventListener("click", async e => {
     case "period": S.filter.period = el.dataset.k; render(); break;
     case "ftype": S.filter.type = (S.filter.type === el.dataset.k && el.tagName === "TR") ? "" : el.dataset.k; render(); break;
     case "cal": { const k = Number(el.dataset.k); if (!k) { const d=new Date(); S.calMonth = new Date(d.getFullYear(), d.getMonth(), 1); } else S.calMonth = new Date(S.calMonth.getFullYear(), S.calMonth.getMonth()+k, 1); render(); break; }
+    case "calview": S.calView = el.dataset.k; render(); break;
+    case "calgo": { const k = el.dataset.k; if (k) { S.calMonth = new Date(Number(k.slice(0,4)), Number(k.slice(5,7))-1, 1); S.calView = "month"; S.calInit = true; render(); scrollTo(0,0); } break; }
+    case "cal-acc": S.filter.account = S.filter.account === el.dataset.k ? "" : el.dataset.k; render(); break;
     case "day": S.jDate = el.dataset.d; S.jImgs = null; location.hash = "journal"; break;
     case "jdate": S.jDate = el.dataset.d; S.jImgs = null; render(); break;
     case "j-save": {
@@ -1323,6 +1434,8 @@ document.addEventListener("change", async e => {
   const id = e.target.id;
   if (id === "f-man") { $("#f-manbox").style.display = e.target.checked ? "" : "none"; if (e.target.checked && $("#f-pnl").value==="") { readForm(); $("#f-pnl").value = Math.round(calc({...F,pnlManual:null}).net*100)/100; } updatePreview(); }
   if (id === "f-ins") { if (!F._feesTouched) { readForm(); $("#f-fees").value = autoFee(); } updatePreview(); }
+  if (id === "cal-pick" && e.target.value) { const k = e.target.value; S.calMonth = new Date(Number(k.slice(0,4)), Number(k.slice(5,7))-1, 1); S.calInit = true; render(); }
+  if (e.target.classList && e.target.classList.contains("acc-color")) { const st = clone(S.settings); st.accountColors = { ...(st.accountColors||{}), [e.target.dataset.acc]: e.target.value }; put("settings","settings",st); render(); }
   if (id === "flt-acc") { S.filter.account = e.target.value; render(); }
   if (id === "flt-ins") { S.filter.instrument = e.target.value; render(); }
   if (id === "f-acc") { const g = guessType(e.target.value); if (g) $("#f-type").value = g; if (F) updatePreview(); }
