@@ -1,7 +1,7 @@
 {
-  "name": "Journal de Trading",
-  "short_name": "Journal",
-  "description": "Journal de trading personnel : trades, captures, calendrier, journal quotidien et playbook.",
+  "name": "Edgelog",
+  "short_name": "Edgelog",
+  "description": "Edgelog, ton journal de trading : trades, captures, calendrier, journal quotidien et playbook.",
   "lang": "fr",
   "start_url": "./",
   "scope": "./",

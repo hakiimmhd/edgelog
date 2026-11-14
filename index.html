@@ -3,17 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Journal de Trading</title>
+<title>Edgelog</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Journal">
+<meta name="apple-mobile-web-app-title" content="Edgelog">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#f3f4f8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0b0e15" media="(prefers-color-scheme: dark)">
-<meta name="description" content="Journal de trading personnel : trades, captures, calendrier, journal quotidien et playbook.">
+<meta name="description" content="Edgelog, ton journal de trading : trades, captures, calendrier, journal quotidien et playbook.">
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.100.0/dist/umd/supabase.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -237,7 +237,7 @@ label.f > span{display:flex;justify-content:space-between}
   <aside class="side">
     <div class="brand">
       <span class="brand-mark"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M4 17l5-6 4 3 7-9"/><path d="M15 5h5v5"/></svg></span>
-      <div><b>Journal de Trading</b><small>Futures · ES · GC</small></div>
+      <div><b>Edgelog</b><small>Journal de trading</small></div>
     </div>
     <nav class="nav" id="nav">
       <a href="#dashboard" data-v="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span>Dashboard</span></a>
@@ -1153,7 +1153,7 @@ document.addEventListener("click", async e => {
     case "export": {
       const data = { exportedAt: new Date().toISOString(), settings: S.settings, setups: S.setups, days: S.days, trades: S.trades };
       const blob = new Blob([JSON.stringify(data, null, 1)], { type:"application/json" });
-      const u = URL.createObjectURL(blob); const ln = document.createElement("a"); ln.href = u; ln.download = "journal-trading-" + todayISO() + ".json";
+      const u = URL.createObjectURL(blob); const ln = document.createElement("a"); ln.href = u; ln.download = "edgelog-" + todayISO() + ".json";
       document.body.appendChild(ln); ln.click(); ln.remove(); setTimeout(()=>URL.revokeObjectURL(u), 4000);
       break; }
     case "sync-now": await flush(); await pull(); toast("Synchronisation terminée"); break;
@@ -1248,7 +1248,7 @@ function showSetup(err){
 }
 const AUTH_ERR = m => /invalid login/i.test(m) ? "Email ou mot de passe incorrect." : /not confirmed/i.test(m) ? "Ton email n'est pas encore confirmé : clique sur le lien reçu par email, ou désactive la confirmation dans Supabase (voir le guide)." : /already registered|already exists/i.test(m) ? "Un compte existe déjà avec cet email : connecte-toi." : /password/i.test(m) && /6|short|least/i.test(m) ? "Le mot de passe doit faire au moins 6 caractères." : /signups? not allowed|disabled/i.test(m) ? "Les inscriptions sont fermées sur ce serveur." : /fetch|network/i.test(m) ? "Impossible de joindre le serveur : vérifie ta connexion et l'adresse du projet." : m;
 function showAuth(mode="login", err="", info=""){
-  gate(`${LOGO}<h1>${mode==="login"?"Connexion":"Créer ton compte"}</h1>
+  gate(`${LOGO}<h1>${mode==="login"?"Connexion à Edgelog":"Créer ton compte Edgelog"}</h1>
     <p class="muted">${mode==="login"?"Utilise le même compte sur ton Mac et ton iPhone pour retrouver tes trades.":"Ce compte protège ton journal. Tu l'utiliseras sur tous tes appareils."}</p>
     <form id="auth-form" class="grid" style="gap:10px">
       <label class="f" for="au-mail"><span>Email</span><input type="email" id="au-mail" autocomplete="email" required></label>

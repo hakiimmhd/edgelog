@@ -1,4 +1,4 @@
-# Journal de Trading : installation sur Mac et iPhone
+# Edgelog : installation sur Mac et iPhone
 
 Compte environ 20 minutes au total, une seule fois. Tout est gratuit.
 
@@ -52,7 +52,7 @@ L'app est composée de trois éléments :
 **Sur le MacBook** (macOS Sonoma 14 ou plus récent) :
 1. Ouvre l'adresse de ton app dans **Safari**.
 2. Menu **Fichier → Ajouter au Dock…**, puis **Ajouter**.
-3. Lance « Journal » depuis le Dock et crée ton compte (email et mot de passe d'au moins 6 caractères).
+3. Lance « Edgelog » depuis le Dock et crée ton compte (email et mot de passe d'au moins 6 caractères).
 
 **Sur l'iPhone** :
 1. Ouvre l'adresse de ton app dans **Safari**.
