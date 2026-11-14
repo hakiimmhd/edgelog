@@ -106,6 +106,12 @@ td.r,th.r{text-align:right}
 .chip.short{background:var(--loss-soft);color:var(--loss);border-color:transparent}
 .chip.mis{background:var(--loss-soft);color:var(--loss);border-color:transparent}
 .chip.acc{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.chip.ty{font-weight:600;border-color:transparent}
+.chip.ty-demo{background:color-mix(in srgb,var(--muted) 18%,transparent);color:var(--text)}
+.chip.ty-challenge{background:var(--accent-soft);color:var(--accent)}
+.chip.ty-express{background:color-mix(in srgb,var(--warn) 20%,transparent);color:var(--warn)}
+.chip.ty-funded{background:var(--win-soft);color:var(--win)}
+tr.ty-row{cursor:pointer} tr.ty-row:hover td{background:var(--panel-2)} tr.ty-row.on td{background:var(--accent-soft)}
 .chips{display:flex;flex-wrap:wrap;gap:5px}
 .toggle-chip{cursor:pointer;user-select:none}
 .toggle-chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
@@ -310,12 +316,18 @@ const DEFAULT_SETTINGS = {
   startBalance: 50000
 };
 
+const ACCT_TYPES = ["Démo","Challenge","Express","Funded"];
+function guessType(name){ const n = String(name||""); if (/^d[ée]mo|prac|practice/i.test(n)) return "Démo"; if (/express/i.test(n)) return "Express"; if (/challenge|combine|ktc|[ée]valuation/i.test(n)) return "Challenge"; if (/funded|live/i.test(n)) return "Funded"; return ""; }
+const typeOf = t => t.accountType || guessType(t.account);
+const tyCls = ty => ({"Démo":"ty-demo","Challenge":"ty-challenge","Express":"ty-express","Funded":"ty-funded"})[ty] || "";
+const tyChip = ty => ty ? `<span class="chip ty ${tyCls(ty)}">${esc(ty)}</span>` : "";
+
 /* ============ état ============ */
 const S = {
   uid: null, email: "", rec: {}, outbox: [], syncErr: null, channel: null,
   trades: [], setups: [], days: {}, settings: clone(DEFAULT_SETTINGS),
   view: "dashboard",
-  filter: { period: "all", account: "", instrument: "" },
+  filter: { period: "all", account: "", instrument: "", type: "" },
   tfilter: { q:"", setup:"", result:"", from:"", to:"" },
   calMonth: (()=>{ const d=new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
   jDate: todayISO(),
@@ -533,6 +545,13 @@ function remove(id){
   S.outbox.push({ op:"delete", id });
   afterWrite();
 }
+function putMany(items){
+  const now = new Date().toISOString();
+  const ids = new Set(items.map(x => x.id));
+  S.outbox = S.outbox.filter(o => !ids.has(o.id));
+  for (const { kind, id, data } of items) { S.rec[id] = { kind, data, updated_at: now }; S.outbox.push({ op:"upsert", id, kind, data, updated_at: now }); }
+  afterWrite();
+}
 function afterWrite(){ rebuild(); persist(); dataChanged(); flush(); }
 let flushing = false;
 async function flush(){
@@ -542,11 +561,17 @@ async function flush(){
   try {
     while (S.outbox.length) {
       const o = S.outbox[0]; let res;
-      if (o.op === "upsert") res = await SB.from("records").upsert({ user_id:S.uid, id:o.id, kind:o.kind, data:o.data, updated_at:o.updated_at }, { onConflict:"user_id,id" });
-      else res = await SB.from("records").delete().eq("user_id", S.uid).eq("id", o.id);
-      if (res.error) throw res.error;
-      const i = S.outbox.indexOf(o); if (i >= 0) S.outbox.splice(i, 1);
-      persist();
+      if (o.op === "upsert") {
+        const batch = []; for (const x of S.outbox) { if (x.op !== "upsert" || batch.length >= 150) break; batch.push(x); }
+        res = await SB.from("records").upsert(batch.map(x => ({ user_id:S.uid, id:x.id, kind:x.kind, data:x.data, updated_at:x.updated_at })), { onConflict:"user_id,id" });
+        if (res.error) throw res.error;
+        batch.forEach(x => { const i = S.outbox.indexOf(x); if (i >= 0) S.outbox.splice(i, 1); });
+      } else {
+        res = await SB.from("records").delete().eq("user_id", S.uid).eq("id", o.id);
+        if (res.error) throw res.error;
+        const i = S.outbox.indexOf(o); if (i >= 0) S.outbox.splice(i, 1);
+      }
+      persist(); setSync();
     }
     S.syncErr = null;
   } catch(e) {
@@ -618,6 +643,13 @@ function compress(file, max=2200, q=.88){
     img.onerror = () => { URL.revokeObjectURL(u); rej(new Error("image illisible")); }; img.src = u;
   });
 }
+async function uploadBlob(blob){
+  const path = S.uid + "/" + uid("i") + ".jpg";
+  const { error } = await SB.storage.from("captures").upload(path, blob, { contentType: blob.type || "image/jpeg", cacheControl:"31536000", upsert:false });
+  if (error) throw error;
+  S.localUrl[path] = URL.createObjectURL(blob);
+  return { path };
+}
 async function uploadImages(files){
   const out = [];
   if (!navigator.onLine) { toast("Pas de connexion : les captures ne peuvent pas être envoyées hors ligne."); return out; }
@@ -647,14 +679,20 @@ function periodStart(p){
 }
 function applyFilter(list){
   const f = S.filter, from = periodStart(f.period);
+  return list.filter(t => (!from || t.date >= from) && (!f.account || t.account===f.account) && (!f.instrument || t.instrument===f.instrument) && (!f.type || typeOf(t)===f.type));
+}
+function applyFilterNoType(list){
+  const f = S.filter, from = periodStart(f.period);
   return list.filter(t => (!from || t.date >= from) && (!f.account || t.account===f.account) && (!f.instrument || t.instrument===f.instrument));
 }
 function filterBar(){
   const f = S.filter, tr = allTrades();
   const accs = [...new Set(tr.map(t=>t.account).filter(Boolean).concat(S.settings.accounts))];
   const ins = [...new Set(tr.map(t=>t.instrument))].sort();
+  const types = ACCT_TYPES.filter(x => tr.some(t => typeOf(t)===x));
   const per = [["all","Tout"],["week","Semaine"],["month","Mois"],["30","30 j"],["year","Année"]];
   return `<div class="filters">
+    <div class="seg" role="group" aria-label="Type de compte">${[["","Tous les types"]].concat(types.map(x=>[x,x])).map(([k,l])=>`<button data-act="ftype" data-k="${esc(k)}" class="${f.type===k?"on":""}">${esc(l)}</button>`).join("")}</div>
     <div class="seg" role="group" aria-label="Période">${per.map(([k,l])=>`<button data-act="period" data-k="${k}" class="${f.period===k?"on":""}">${l}</button>`).join("")}</div>
     <select id="flt-acc" aria-label="Compte"><option value="">Tous les comptes</option>${accs.map(a=>`<option ${a===f.account?"selected":""}>${esc(a)}</option>`).join("")}</select>
     <select id="flt-ins" aria-label="Instrument"><option value="">Tous les instruments</option>${ins.map(a=>`<option ${a===f.instrument?"selected":""}>${esc(a)}</option>`).join("")}</select>
@@ -704,6 +742,7 @@ function vDashboard(){
     ${kpiTile("Espérance / trade", money(s.exp), isFinite(s.avgR)? `R moyen ${nf2.format(s.avgR)}` : "ajoute un stop pour le R", "", cls(s.exp))}
     ${kpiTile("Jours verts", pct(s.dayWin), `${s.greenDays} / ${s.days.length} jours · DD max ${moneyK(-s.maxDD)}`)}
   </div>
+  ${typeCompare()}
   <div class="grid g-main" style="margin-bottom:14px">
     <div class="card"><div class="card-head"><h2>P&L cumulé</h2><span class="muted num">${money(s.net)}</span></div><div class="chart-box"><canvas id="ch-cum"></canvas></div></div>
     <div class="card"><div class="card-head"><h2>Score trader</h2><span class="score-ring ${sc.total>=60?"pos":sc.total<40?"neg":""}">${nf0.format(sc.total)}</span></div><div class="chart-box"><canvas id="ch-radar"></canvas></div></div>
@@ -721,6 +760,15 @@ function vDashboard(){
     <div class="card"><h2>Par jour de la semaine</h2><div class="chart-box sm"><canvas id="ch-wd"></canvas></div></div>
     <div class="card"><div class="card-head"><h2>Derniers trades</h2><a href="#trades">Tout voir</a></div>${miniTradeTable(recent)}</div>
   </div>`;
+}
+function typeCompare(){
+  const base = applyFilterNoType(allTrades());
+  const rows = ACCT_TYPES.map(ty => ({ ty, s: stats(base.filter(t => typeOf(t)===ty)) })).filter(r => r.s.n);
+  if (rows.length < 1) return "";
+  return `<div class="card" style="margin-bottom:14px"><div class="card-head"><h2>Démo, Challenge, Express : tes performances séparées</h2><span class="muted">clique une ligne pour filtrer tout le dashboard</span></div>
+  <div class="tbl-wrap"><table><thead><tr><th>Type</th><th class="r">Trades</th><th class="r">Jours</th><th class="r">Win rate</th><th class="r">Profit factor</th><th class="r">Gain / perte moy.</th><th class="r">Espérance</th><th class="r">DD max</th><th class="r">P&L net</th></tr></thead><tbody>
+  ${rows.map(({ty,s}) => `<tr class="ty-row ${S.filter.type===ty?"on":""}" data-act="ftype" data-k="${esc(ty)}"><td>${tyChip(ty)}</td><td class="r num">${s.n}</td><td class="r num">${s.days.length}</td><td class="r num">${pct(s.winRate)}</td><td class="r num">${isFinite(s.pf)?nf2.format(s.pf):"—"}</td><td class="r num"><span class="pos">${moneyK(s.avgW)}</span> / <span class="neg">${moneyK(s.avgL)}</span></td><td class="r num ${cls(s.exp)}">${money(s.exp)}</td><td class="r num neg">${moneyK(-s.maxDD)}</td><td class="r num ${cls(s.net)}"><b>${money(s.net)}</b></td></tr>`).join("")}
+  </tbody></table></div></div>`;
 }
 function groupStats(list, keyFn){
   const g = {};
@@ -793,13 +841,13 @@ function vTrades(){
     <label class="muted" for="tf-to">au</label><input type="date" id="tf-to" value="${esc(f.to)}">
   </div>
   <div class="card" style="padding:4px 8px">${list.length ? `<div class="tbl-wrap"><table>
-    <thead><tr><th>Date</th><th>Heure</th><th>Instrument</th><th>Sens</th><th class="r">Qté</th><th class="r">Entrée</th><th class="r">Sortie</th><th class="r">P&L net</th><th class="r">R</th><th>Setup</th><th>Erreurs</th><th>Note</th><th></th></tr></thead>
+    <thead><tr><th>Date</th><th>Heure</th><th>Instrument</th><th>Sens</th><th class="r">Qté</th><th class="r">Entrée</th><th class="r">Sortie</th><th class="r">P&L net</th><th class="r">R</th><th>Compte</th><th>Setup</th><th>Erreurs</th><th>Note</th><th></th></tr></thead>
     <tbody>${list.map(t => { const c = C(t); return `<tr class="click" data-act="open" data-id="${esc(t.id)}">
       <td class="num">${fmtDate(t.date)}</td><td class="num muted">${esc(t.entryTime||"")}</td><td><b>${esc(t.instrument)}</b></td>
       <td><span class="chip ${t.side}">${t.side==="long"?"Long":"Short"}</span></td><td class="r num">${esc(t.qty)}</td>
       <td class="r num">${isFinite(num(t.entry))?esc(t.entry):"—"}</td><td class="r num">${isFinite(num(t.exit))?esc(t.exit):"—"}</td>
       <td class="r num ${cls(c.net)}"><b>${money(c.net)}</b></td><td class="r num ${cls(c.r)}">${c.r!=null?nf2.format(c.r)+"R":"—"}</td>
-      <td>${esc(setupName(t.setup))}</td><td>${(t.mistakes||[]).map(m=>`<span class="chip mis">${esc(m)}</span>`).join(" ")}</td>
+      <td>${tyChip(typeOf(t))} <span class="muted" style="font-size:12px">${esc((t.account||"").replace(/^(Démo|Challenge|Express|Funded)\s*/,""))}</span></td><td>${esc(setupName(t.setup))}</td><td>${(t.mistakes||[]).map(m=>`<span class="chip mis">${esc(m)}</span>`).join(" ")}</td>
       <td>${starsRO(t.rating)}</td><td class="muted">${(t.images||[]).length?`<span title="captures">▣ ${(t.images||[]).length}</span>`:""}</td></tr>`; }).join("")}</tbody></table></div>` : `<div class="empty">Aucun trade ne correspond à ces filtres.</div>`}</div>`;
 }
 function starsRO(n){ n = Number(n)||0; return `<span class="stars ro" aria-label="${n} sur 5">${[1,2,3,4,5].map(i=>`<span class="${i<=n?"on":""}">★</span>`).join("")}</span>`; }
@@ -945,7 +993,7 @@ function renderDrawer(){
   const c = C(t); const imgs = t.images || [];
   root.innerHTML = `<div class="drawer-wrap" data-act="drawer-bg"><aside class="drawer" role="dialog" aria-label="Détail du trade">
     <div class="modal-head"><div><div class="muted">${fmtDateLong(t.date)} · ${esc(t.entryTime||"")}${t.exitTime?" → "+esc(t.exitTime):""}</div>
-      <h1>${esc(t.instrument)} <span class="chip ${t.side}" style="vertical-align:middle">${t.side==="long"?"Long":"Short"}</span> ${t.demo?'<span class="chip">exemple</span>':""}</h1></div>
+      <h1>${esc(t.instrument)} <span class="chip ${t.side}" style="vertical-align:middle">${t.side==="long"?"Long":"Short"}</span> ${tyChip(typeOf(t))} ${t.demo?'<span class="chip">exemple</span>':""}</h1></div>
       <button class="btn ghost" data-act="drawer-close" aria-label="Fermer">✕</button></div>
     <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:6px 0 14px"><span class="big-pnl ${cls(c.net)}">${money(c.net)}</span>
       <span class="num muted">${c.r!=null?nf2.format(c.r)+" R":""}${c.manual?" · P&L saisi à la main":""}</span>${starsRO(t.rating)}</div>
@@ -993,6 +1041,7 @@ function renderForm(){
       <label class="f" for="f-et"><span>Heure d'entrée</span><input type="time" id="f-et" value="${esc(F.entryTime)}"></label>
       <label class="f" for="f-xt"><span>Heure de sortie</span><input type="time" id="f-xt" value="${esc(F.exitTime)}"></label>
       <label class="f" for="f-acc"><span>Compte</span><select id="f-acc">${opt(accs, F.account, "—")}</select></label>
+      <label class="f" for="f-type"><span>Type de compte</span><select id="f-type">${opt(ACCT_TYPES, F.accountType || guessType(F.account), "—")}</select></label>
       <label class="f" for="f-ins"><span>Instrument</span><select id="f-ins">${opt(ins, F.instrument)}</select></label>
       <label class="f"><span>Sens</span><div class="seg" role="group" aria-label="Sens"><button type="button" data-act="side" data-k="long" class="${F.side==="long"?"on":""}">Long</button><button type="button" data-act="side" data-k="short" class="${F.side==="short"?"on":""}">Short</button></div></label>
       <label class="f" for="f-qty"><span>Contrats</span><input type="number" id="f-qty" min="0" step="1" value="${esc(F.qty)}"></label>
@@ -1027,7 +1076,7 @@ function renderForm(){
 }
 function renderFormImgs(){ const el = $("#f-imgs"); if (!el) return; el.innerHTML = F.images.map((im,i)=>`<div class="thumb" data-act="lb" data-set="form" data-i="${i}"><img ${srcAttr(im)} alt="Capture ${i+1}"><button class="x" data-act="f-rmimg" data-i="${i}" aria-label="Retirer">×</button></div>`).join(""); }
 function readForm(){
-  F.date = $("#f-date").value; F.entryTime = $("#f-et").value; F.exitTime = $("#f-xt").value; F.account = $("#f-acc").value;
+  F.date = $("#f-date").value; F.entryTime = $("#f-et").value; F.exitTime = $("#f-xt").value; F.account = $("#f-acc").value; F.accountType = $("#f-type").value;
   F.instrument = $("#f-ins").value; F.qty = $("#f-qty").value === "" ? "" : Number($("#f-qty").value);
   F.entry = $("#f-entry").value === "" ? "" : Number($("#f-entry").value); F.exit = $("#f-exit").value === "" ? "" : Number($("#f-exit").value);
   F.stop = $("#f-stop").value === "" ? "" : Number($("#f-stop").value); F.target = $("#f-tgt").value === "" ? "" : Number($("#f-tgt").value);
@@ -1053,7 +1102,8 @@ async function submitTrade(){
   if (!(num(F.qty) > 0)) return err("Indique le nombre de contrats.");
   if (!F._manual && (!isFinite(num(F.entry)) || !isFinite(num(F.exit)))) return err("Indique les prix d'entrée et de sortie, ou corrige le P&L à la main.");
   if (F._manual && F.pnlManual === null) return err("Indique le P&L net corrigé.");
-  const t = {}; ["id","date","entryTime","exitTime","instrument","side","entry","exit","qty","stop","target","fees","pnlManual","account","setup","mistakes","tags","emotion","rating","followedPlan","notes","images"].forEach(k => t[k] = F[k]);
+  const t = {}; ["id","date","entryTime","exitTime","instrument","side","entry","exit","qty","stop","target","fees","pnlManual","account","accountType","setup","mistakes","tags","emotion","rating","followedPlan","notes","images"].forEach(k => t[k] = F[k]);
+  if (F.source) t.source = F.source;
   const btn = $('[data-act="save-trade"]'); btn.disabled = true; btn.textContent = "Enregistrement…";
   const removed = F._removed || [];
   try { await saveTrade(t); purgeImages(removed); closeModal(); toast("Trade enregistré"); S.drawer = t.id; renderDrawer(); }
@@ -1127,6 +1177,7 @@ document.addEventListener("click", async e => {
       else if (set==="day") openLB(S.jImgs || (S.days[S.jDate]||{}).images || [], i);
       break; }
     case "period": S.filter.period = el.dataset.k; render(); break;
+    case "ftype": S.filter.type = (S.filter.type === el.dataset.k && el.tagName === "TR") ? "" : el.dataset.k; render(); break;
     case "cal": { const k = Number(el.dataset.k); if (!k) { const d=new Date(); S.calMonth = new Date(d.getFullYear(), d.getMonth(), 1); } else S.calMonth = new Date(S.calMonth.getFullYear(), S.calMonth.getMonth()+k, 1); render(); break; }
     case "day": S.jDate = el.dataset.d; S.jImgs = null; location.hash = "journal"; break;
     case "jdate": S.jDate = el.dataset.d; S.jImgs = null; render(); break;
@@ -1182,6 +1233,7 @@ document.addEventListener("change", async e => {
   if (id === "f-ins") { if (!F._feesTouched) { readForm(); $("#f-fees").value = autoFee(); } updatePreview(); }
   if (id === "flt-acc") { S.filter.account = e.target.value; render(); }
   if (id === "flt-ins") { S.filter.instrument = e.target.value; render(); }
+  if (id === "f-acc") { const g = guessType(e.target.value); if (g) $("#f-type").value = g; }
   if (id === "tf-setup") { S.tfilter.setup = e.target.value; render(); }
   if (id === "tf-res") { S.tfilter.result = e.target.value; render(); }
   if (id === "tf-from") { S.tfilter.from = e.target.value; render(); }
@@ -1200,14 +1252,33 @@ document.addEventListener("dragleave", e => { const d = e.target.closest && e.ta
 document.addEventListener("drop", e => { const d = e.target.closest && e.target.closest(".drop"); if (!d) return; e.preventDefault(); d.classList.remove("over"); const files = [...e.dataTransfer.files]; if (S.dropTarget && files.length) S.dropTarget(files); });
 
 async function importJSON(file){
+  let data;
+  try { data = JSON.parse(await file.text()); } catch(err) { toast("Fichier illisible : choisis un fichier JSON d'Edgelog."); return; }
+  const trades = (data.trades||[]).filter(t => t && t.id && t.date);
+  const days = Object.entries(data.days||{});
+  const setups = (data.setups||[]).filter(x => x && x.id);
+  const countImgs = l => (l||[]).filter(im => im && typeof im.url === "string" && im.url.startsWith("data:")).length;
+  const totalImgs = trades.reduce((n,t)=>n+countImgs(t.images),0) + days.reduce((n,[,d])=>n+countImgs(d.images),0) + setups.reduce((n,x)=>n+countImgs(x.images),0);
+  if (totalImgs && !navigator.onLine) { toast("Connexion requise pour importer les captures."); return; }
+  let done = 0, failed = 0;
+  const prog = () => { $("#modal-root").innerHTML = `<div class="overlay"><div class="modal" style="width:min(460px,100%)"><h1>Import en cours…</h1><p class="muted">${trades.length} trades, ${days.length} journaux, ${totalImgs} captures. Garde l'app ouverte.</p><div class="bar2" style="height:10px;background:var(--panel-2)"><i style="width:${totalImgs?Math.round(done/totalImgs*100):100}%;background:var(--accent)"></i></div><p class="num">Captures envoyées : ${done} / ${totalImgs}${failed?` · ${failed} en échec`:""}</p></div></div>`; };
+  prog();
+  const fix = async (list, prev=[]) => { const out = []; for (const im of list||[]) { const same = im && im.name && prev.find(p => p.name === im.name && p.path); if (same) { out.push(same); done++; prog(); continue; } if (im && typeof im.url === "string" && im.url.startsWith("data:")) { try { const blob = await (await fetch(im.url)).blob(); const up = await uploadBlob(blob); if (im.name) up.name = im.name; out.push(up); } catch(e) { failed++; } done++; prog(); } else if (im) out.push(im); } return out; };
   try {
-    const data = JSON.parse(await file.text());
-    if (data.settings) await saveSettings({...clone(DEFAULT_SETTINGS), ...data.settings});
-    for (const s of data.setups||[]) if (s.id) await saveSetup(s);
-    for (const [k,v] of Object.entries(data.days||{})) await saveDay({...v, date:k});
-    let n = 0; for (const t of data.trades||[]) if (t.id && t.date) { await saveTrade(t); n++; }
-    toast(n + " trades importés · synchronisation en cours");
-  } catch(err) { toast("Fichier illisible : choisis une sauvegarde JSON exportée depuis cette page."); }
+    if (data.settings) {
+      const cur = clone(S.settings);
+      for (const i of data.settings.instruments||[]) if (!cur.instruments.find(x => x.sym === i.sym)) cur.instruments.push(i);
+      for (const k of ["accounts","tags","mistakes","emotions"]) cur[k] = [...new Set((cur[k]||[]).concat(data.settings[k]||[]))];
+      put("settings", "settings", cur);
+    }
+    const items = [];
+    for (const x of setups) { const b = clone(x); delete b.id; b.images = await fix(x.images); items.push({ kind:"setup", id:x.id, data:b }); }
+    for (const [k,v] of days) { const prev = (S.days[k]||{}); const b = clone(prev); delete b.date; for (const [kk,vv] of Object.entries(v)) { if (kk === "images" || kk === "date") continue; if (vv !== "" && vv != null && (b[kk] === undefined || b[kk] === "" || b[kk] === 0)) b[kk] = vv; } const added = await fix(v.images, prev.images||[]); b.images = (prev.images||[]).filter(p => !added.includes(p)).concat(added); items.push({ kind:"day", id:k, data:b }); }
+    for (const t of trades) { const b = clone(t); delete b.id; delete b.demo; const prevT = S.trades.find(x => x.id === t.id) || {}; const kept = (prevT.images||[]).filter(p => !p.name); b.images = kept.concat(await fix(t.images, prevT.images||[])); for (const k of ["setup","mistakes","emotion","rating","followedPlan","notes","stop","target"]) if (prevT[k] !== undefined && prevT[k] !== "" && !(Array.isArray(prevT[k]) && !prevT[k].length) && prevT[k] !== 0 && prevT[k] !== null) b[k] = prevT[k]; items.push({ kind:"trade", id:t.id, data:b }); }
+    putMany(items);
+    closeModal();
+    toast(`${trades.length} trades et ${days.length} journaux importés${failed?`, ${failed} captures en échec`:""}. Synchronisation en cours.`);
+  } catch(err) { console.warn(err); closeModal(); toast("Import interrompu : réessaie, les éléments déjà importés ne seront pas dupliqués."); }
 }
 
 /* ============ routage ============ */
