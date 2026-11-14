@@ -1,6 +1,6 @@
 // Service worker : permet d'ouvrir l'app hors ligne et de la charger vite.
 // Change VERSION à chaque mise à jour des fichiers pour forcer le rafraîchissement.
-const VERSION = "tj-v10";
+const VERSION = "tj-v11";
 const SHELL = [
   "./", "./index.html", "./config.js", "./manifest.webmanifest",
   "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"

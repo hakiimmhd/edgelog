@@ -816,18 +816,18 @@ function typeCompare(){
 const SYS = {
   id: "sys-v2", name: "Plan v2 — News + Zone",
   types: ["Challenge","Express","Funded"], allowed: ["MES","MGC","6A","M6A"],
-  risk: 250, maxQty: 5, maxTrades: 2, dayStop: -400, goal: 20,
+  risk: 250, maxQty: 5, minRR: 2, maxTrades: 2, dayStop: -400, goal: 20,
   okNews: [], badNews: [],
   checklist: [
     "Setup A (News) : résultat publié ET clair dans un sens, entrée après la bougie de news — OU Setup B (Zone) : prix sur une zone clé (haut/bas de range, plus haut/bas hebdo) qui se fait respecter + déclencheur (BOS, rejet, ouverture)",
     "Stop posé à l'entrée, risque ≤ 250 $, 5 micros max",
-    "TP sur une zone du graphique (mid-range, liquidité), pas sur un montant — au moins 1,5R",
+    "TP sur une zone du graphique (mid-range, liquidité), pas sur un montant — au moins 2R",
     "Après l'entrée : je quitte l'écran, SL au BE seulement après +1R",
     "Si j'ai déjà perdu aujourd'hui : la page du carnet est écrite avant ce trade"
   ],
   rules: [
     ["std","Contrat standard"],["ins","Instrument hors plan"],["qty","Plus de 5 contrats"],["fri","Vendredi"],
-    ["ren","Renfort contre moi"],["max","Plus de 2 trades / jour"],["stop","Après le stop journalier −400 $"],["risk","Risque > 250 $"],["pause","Trade pendant la pause 2 jours"],["protRisk","Mode protection : risque > 100 $"],["protMax","Mode protection : plus de 2 trades / jour"]
+    ["ren","Renfort contre moi"],["max","Plus de 2 trades / jour"],["stop","Après le stop journalier −400 $"],["risk","Risque > 250 $"],["rr","TP prévu < 2R"],["pause","Trade pendant la pause 2 jours"],["protRisk","Mode protection : risque > 100 $"],["protMax","Mode protection : plus de 2 trades / jour"]
   ]
 };
 const REN = "Renfort contre moi";
@@ -848,6 +848,7 @@ function sysCheck(t, list){
   const cumBefore = before.filter(x => (x.exitTime||x.entryTime||"") <= (t.entryTime||"")).reduce((a,x)=>a+C(x).net,0);
   if (cumBefore <= SYS.dayStop) v.push("stop");
   const c = calc(t); if (c.risk > SYS.risk * 1.1) v.push("risk");
+  { const e = num(t.entry), st = num(t.stop), tg = num(t.target); if ([e,st,tg].every(isFinite) && e !== st && Math.abs(tg - e) / Math.abs(e - st) < SYS.minRR - 0.05) v.push("rr"); }
   if (t.account) { const ps = acctState(t.account, tKey(t), t.date, list);
     if (ps.status === "pause") v.push("pause");
     if (ps.status === "prot") { if (c.risk > PROT.risk * 1.1) v.push("protRisk"); if (before.length >= PROT.maxTrades) v.push("protMax"); } }
