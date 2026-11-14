@@ -1,0 +1,1311 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Journal de Trading</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Journal">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#f3f4f8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0e15" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Journal de trading personnel : trades, captures, calendrier, journal quotidien et playbook.">
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.100.0/dist/umd/supabase.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* Layout: barre latérale fixe + zone de travail; tuiles de stats, graphiques, tableaux denses. */
+:root{
+  --bg:#f3f4f8; --panel:#ffffff; --panel-2:#eceff6; --line:#dbe0ea;
+  --text:#121725; --muted:#5e677c; --accent:#3354e0; --accent-soft:#e3e9ff;
+  --win:#0b9467; --win-soft:#dcf5ea; --loss:#d93a44; --loss-soft:#fde4e5; --warn:#c77c06;
+  --f-display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r:10px; color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0b0e15; --panel:#121722; --panel-2:#192031; --line:#242c3e;
+    --text:#e6e9f1; --muted:#8a93a9; --accent:#7390ff; --accent-soft:#1d2645;
+    --win:#25c48c; --win-soft:#10291f; --loss:#ff5f68; --loss-soft:#331418; --warn:#f0a43a;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0b0e15; --panel:#121722; --panel-2:#192031; --line:#242c3e;
+  --text:#e6e9f1; --muted:#8a93a9; --accent:#7390ff; --accent-soft:#1d2645;
+  --win:#25c48c; --win-soft:#10291f; --loss:#ff5f68; --loss-soft:#331418; --warn:#f0a43a;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:14px/1.5 var(--f-body)}
+h1,h2,h3{font-family:var(--f-display);margin:0;text-wrap:balance;letter-spacing:-.01em}
+h1{font-size:24px} h2{font-size:17px} h3{font-size:14px}
+.num,.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+a{color:var(--accent)}
+.app{display:grid;grid-template-columns:224px 1fr;height:100%}
+.side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;gap:6px;padding:18px 14px;overflow:auto}
+.brand{display:flex;align-items:center;gap:10px;padding:2px 6px 16px}
+.brand-mark{width:30px;height:30px;border-radius:8px;background:var(--accent);display:grid;place-items:center}
+.brand b{font-family:var(--f-display);font-size:16px;line-height:1.1}
+.brand small{display:block;color:var(--muted);font-size:11px}
+.nav a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;color:var(--muted);text-decoration:none;font-weight:500}
+.nav a:hover{background:var(--panel-2);color:var(--text)}
+.nav a.on{background:var(--accent-soft);color:var(--accent)}
+.nav svg{width:17px;height:17px;flex:none}
+.side .grow{flex:1}
+.status{font-size:12px;color:var(--muted);display:flex;gap:7px;align-items:center;padding:8px 6px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--warn);flex:none}
+.dot.ok{background:var(--win)} .dot.bad{background:var(--loss)}
+main{overflow:auto;padding:22px 26px 60px}
+.page-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.page-head p{margin:2px 0 0;color:var(--muted)}
+.btn{border:1px solid var(--line);background:var(--panel);padding:7px 13px;border-radius:8px;cursor:pointer;font-weight:500;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.danger{color:var(--loss)} .btn.danger.armed{background:var(--loss);color:#fff;border-color:var(--loss)}
+.btn.sm{padding:4px 9px;font-size:12.5px}
+.btn.ghost{border-color:transparent;background:transparent}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.card h2,.card h3{margin-bottom:10px}
+.card-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:10px}
+.card-head h2,.card-head h3{margin:0}
+.muted{color:var(--muted)}
+.grid{display:grid;gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:14px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:13px 15px}
+.kpi .lbl{font-size:12px;color:var(--muted);display:flex;justify-content:space-between}
+.kpi .val{font-family:var(--f-mono);font-size:20px;white-space:nowrap;font-weight:600;margin-top:4px;font-variant-numeric:tabular-nums}
+.kpi .sub{font-size:12px;color:var(--muted);margin-top:2px}
+.bar2{height:6px;border-radius:4px;background:var(--loss-soft);overflow:hidden;margin-top:8px;display:flex}
+.bar2 i{background:var(--win);display:block}
+.pos{color:var(--win)} .neg{color:var(--loss)}
+.g-main{grid-template-columns:2fr 1fr} .g-2{grid-template-columns:1fr 1fr} .g-3{grid-template-columns:repeat(3,1fr)}
+.chart-box{position:relative;height:250px}
+.chart-box.sm{height:200px}
+table{width:100%;border-collapse:collapse}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr.click{cursor:pointer} tr.click:hover td{background:var(--panel-2)}
+td.r,th.r{text-align:right}
+.tbl-wrap{overflow-x:auto}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:12px;background:var(--panel-2);border:1px solid var(--line);white-space:nowrap}
+.chip.long{background:var(--win-soft);color:var(--win);border-color:transparent}
+.chip.short{background:var(--loss-soft);color:var(--loss);border-color:transparent}
+.chip.mis{background:var(--loss-soft);color:var(--loss);border-color:transparent}
+.chip.acc{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.toggle-chip{cursor:pointer;user-select:none}
+.toggle-chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.toggle-chip.on.misc{background:var(--loss);border-color:var(--loss)}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.seg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:2px}
+.seg button{border:0;background:transparent;padding:5px 10px;border-radius:6px;cursor:pointer;color:var(--muted);font-weight:500}
+.seg button.on{background:var(--accent-soft);color:var(--accent)}
+select,input[type=text],input[type=number],input[type=date],input[type=time],input[type=search],textarea{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 9px;width:100%;min-width:0}
+textarea{resize:vertical;min-height:70px;line-height:1.5}
+.filters select,.filters input{width:auto}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted);font-weight:500}
+label.f > span{display:flex;justify-content:space-between}
+.form-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.span2{grid-column:span 2} .span4{grid-column:1/-1}
+.sec-title{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;margin:18px 0 8px;display:flex;align-items:center;gap:8px}
+.sec-title::after{content:"";flex:1;height:1px;background:var(--line)}
+.banner{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:var(--accent-soft);border:1px solid var(--line);color:var(--text);padding:10px 14px;border-radius:var(--r);margin-bottom:14px}
+.banner.warn{background:var(--loss-soft)}
+.thumb-row{display:flex;gap:8px;flex-wrap:wrap}
+.thumb{position:relative;width:132px;aspect-ratio:16/10;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:var(--panel-2);cursor:zoom-in}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb .x{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:6px;border:0;background:rgba(0,0,0,.65);color:#fff;cursor:pointer;line-height:1}
+.drop{border:1.5px dashed var(--line);border-radius:var(--r);padding:16px;text-align:center;color:var(--muted);cursor:pointer;transition:border-color .15s,background .15s}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop b{color:var(--text)}
+.stars{display:inline-flex;gap:2px}
+.stars button{border:0;background:none;padding:0 1px;cursor:pointer;font-size:19px;line-height:1;color:var(--line)}
+.stars button.on{color:var(--warn)}
+.stars.ro span{font-size:14px;color:var(--line)} .stars.ro span.on{color:var(--warn)}
+.overlay{position:fixed;inset:0;background:rgba(8,10,16,.55);display:flex;align-items:flex-start;justify-content:center;padding:30px 16px;overflow:auto;z-index:20}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(920px,100%);padding:20px 22px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.modal-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px}
+.modal-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:18px;flex-wrap:wrap}
+.preview{display:flex;gap:18px;flex-wrap:wrap;align-items:center;background:var(--panel-2);padding:10px 14px;border-radius:8px;margin-top:10px}
+.preview .num{font-size:18px;font-weight:600}
+.drawer-wrap{position:fixed;inset:0;z-index:15;background:rgba(8,10,16,.4);display:flex;justify-content:flex-end}
+.drawer{width:min(760px,100%);height:100%;background:var(--bg);border-left:1px solid var(--line);overflow:auto;padding:20px 22px 40px}
+.big-pnl{font-family:var(--f-mono);font-size:34px;font-weight:600;font-variant-numeric:tabular-nums}
+.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.facts div{background:var(--panel);padding:9px 12px}
+.facts small{display:block;color:var(--muted);font-size:11.5px}
+.facts b{font-family:var(--f-mono);font-weight:600;font-variant-numeric:tabular-nums}
+.shots{display:grid;gap:10px}
+.shots img{width:100%;border-radius:10px;border:1px solid var(--line);cursor:zoom-in;display:block}
+.notes{white-space:pre-wrap}
+#lightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:40;display:none;align-items:center;justify-content:center}
+#lightbox.on{display:flex}
+#lightbox img{max-width:94vw;max-height:88vh;border-radius:6px}
+#lightbox button{position:absolute;background:rgba(255,255,255,.12);color:#fff;border:0;border-radius:8px;width:42px;height:42px;font-size:22px;cursor:pointer}
+#lightbox .lb-x{top:16px;right:16px} #lightbox .lb-p{left:16px;top:50%} #lightbox .lb-n{right:16px;top:50%}
+#lightbox .lb-c{position:absolute;bottom:14px;color:#ccc;font-size:13px}
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:50;display:flex;flex-direction:column;gap:6px;align-items:center}
+#toast div{background:var(--text);color:var(--bg);padding:9px 14px;border-radius:8px;font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+/* calendrier */
+.cal{display:grid;grid-template-columns:repeat(7,1fr) 1.05fr;gap:6px}
+.cal .hd{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600;padding:0 4px}
+.cday{min-height:92px;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:7px 8px;display:flex;flex-direction:column;gap:2px;cursor:pointer;text-align:left}
+.cday:hover{border-color:var(--muted)}
+.cday.out{opacity:.35}
+.cday.win{background:var(--win-soft);border-color:color-mix(in srgb,var(--win) 35%,transparent)}
+.cday.loss{background:var(--loss-soft);border-color:color-mix(in srgb,var(--loss) 35%,transparent)}
+.cday.today .dn{background:var(--accent);color:#fff;border-radius:5px;padding:0 5px}
+.cday .dn{font-size:12px;color:var(--muted);font-weight:600;align-self:flex-start}
+.cday .p{font-family:var(--f-mono);font-weight:600;font-size:15px;margin-top:auto}
+.cday .m{font-size:11.5px;color:var(--muted)}
+.cday .ic{display:flex;gap:4px;font-size:11px;color:var(--muted)}
+.cweek{min-height:92px;border-radius:8px;background:var(--panel-2);padding:7px 9px;display:flex;flex-direction:column;justify-content:center;gap:2px}
+.cweek small{color:var(--muted);font-size:11.5px}
+.cweek b{font-family:var(--f-mono)}
+/* journal */
+.j-layout{display:grid;grid-template-columns:250px 1fr;gap:14px;align-items:start}
+.j-list{display:flex;flex-direction:column;gap:4px;max-height:75vh;overflow:auto}
+.j-item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;border:1px solid transparent;cursor:pointer;background:none;text-align:left;width:100%}
+.j-item:hover{background:var(--panel-2)}
+.j-item.on{background:var(--accent-soft);border-color:var(--line)}
+.j-item small{color:var(--muted);display:block;font-size:11.5px}
+/* playbook */
+.pb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px}
+.pb{display:flex;flex-direction:column;gap:10px}
+.pb .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.pb .stats div{background:var(--panel-2);border-radius:8px;padding:7px 9px}
+.pb .stats small{display:block;color:var(--muted);font-size:11px}
+.pb .stats b{font-family:var(--f-mono)}
+.pb ul{margin:0;padding-left:18px;color:var(--muted)}
+.pb-img{width:100%;aspect-ratio:16/8;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:zoom-in}
+.empty{padding:30px;text-align:center;color:var(--muted)}
+.score-ring{font-family:var(--f-mono);font-size:30px;font-weight:600}
+@media (max-width:1100px){.g-main,.g-3{grid-template-columns:1fr 1fr}.g-main>.span-full{grid-column:1/-1}}
+.sh{display:none}
+#gate{position:fixed;inset:0;z-index:60;background:var(--bg);display:none;align-items:center;justify-content:center;padding:calc(20px + env(safe-area-inset-top)) 18px calc(20px + env(safe-area-inset-bottom));overflow:auto}
+#gate.on{display:flex}
+.gate-card{width:min(420px,100%);display:flex;flex-direction:column;gap:12px}
+.gate-card h1{font-size:26px}
+.gate-card p{margin:0}
+.err{color:var(--loss);font-size:13px;min-height:0}
+.ok{color:var(--win);font-size:13px}
+.app{padding-top:env(safe-area-inset-top)}
+@media (max-width:860px){
+  html,body{height:auto}
+  .app{display:block;height:auto;padding-top:0}
+  main{padding:calc(14px + env(safe-area-inset-top)) 14px calc(92px + env(safe-area-inset-bottom));overflow:visible}
+  .side{position:fixed;left:0;right:0;bottom:0;z-index:12;flex-direction:row;padding:6px 4px calc(6px + env(safe-area-inset-bottom));border-right:0;border-top:1px solid var(--line);overflow:visible}
+  .brand,.side .grow,.status{display:none}
+  .nav{display:flex;width:100%;justify-content:space-around;gap:0}
+  .nav a{flex-direction:column;gap:2px;font-size:10.5px;padding:5px 4px;min-width:0}
+  .lg{display:none} .sh{display:inline}
+  #side-new{position:fixed;right:16px;bottom:calc(70px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:50%;justify-content:center;font-size:28px;padding:0;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+  input,select,textarea{font-size:16px!important}
+  .page-head .btn.primary[data-act="new-trade"]{display:none}
+  .g-main,.g-2,.g-3{grid-template-columns:1fr}
+  .form-grid{grid-template-columns:1fr 1fr}
+  .facts{grid-template-columns:1fr 1fr}
+  .j-layout{grid-template-columns:1fr}
+  .j-list{max-height:220px}
+  .cal{grid-template-columns:repeat(7,1fr);gap:3px} .cal .wk,.cal .hd.wk{display:none}
+  .cday{min-height:58px;padding:4px} .cday .m,.cday .ic{display:none} .cday .p{font-size:10.5px}
+  .overlay{padding:0}
+  .modal{border-radius:0;min-height:100%;border:0;padding:calc(14px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom))}
+  .drawer{padding:calc(14px + env(safe-area-inset-top)) 16px calc(30px + env(safe-area-inset-bottom))}
+  .kpis{grid-template-columns:1fr 1fr}
+  .filters select,.filters input[type=search]{flex:1 1 140px}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <span class="brand-mark"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M4 17l5-6 4 3 7-9"/><path d="M15 5h5v5"/></svg></span>
+      <div><b>Journal de Trading</b><small>Futures · ES · GC</small></div>
+    </div>
+    <nav class="nav" id="nav">
+      <a href="#dashboard" data-v="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span>Dashboard</span></a>
+      <a href="#trades" data-v="trades"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>Trades</span></a>
+      <a href="#calendrier" data-v="calendrier"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>Calendrier</span></a>
+      <a href="#journal" data-v="journal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h11a2 2 0 012 2v16l-4-2-4 2-4-2-3 2V5a2 2 0 012-2z"/><path d="M9 8h6M9 12h6"/></svg><span class="lg">Journal quotidien</span><span class="sh">Journal</span></a>
+      <a href="#playbook" data-v="playbook"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h7v16H4zM13 4h7v16h-7z"/></svg><span>Playbook</span></a>
+      <a href="#reglages" data-v="reglages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 010-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 014 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 010 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg><span>Réglages</span></a>
+    </nav>
+    <div class="grow"></div>
+    <button class="btn primary" data-act="new-trade" id="side-new" aria-label="Nouveau trade"><span class="lg">+ Nouveau trade</span><span class="sh" aria-hidden="true">+</span></button>
+    <div class="status"><span class="dot" id="st-dot"></span><span id="st-txt">Connexion…</span></div>
+  </aside>
+  <main id="main"></main>
+</div>
+<div id="gate" class="on"><div class="gate-card"><p class="muted">Chargement…</p></div></div>
+<div id="modal-root"></div>
+<div id="drawer-root"></div>
+<div id="lightbox" role="dialog" aria-label="Capture d'écran"><img alt=""><button class="lb-x" aria-label="Fermer">×</button><button class="lb-p" aria-label="Précédente">‹</button><button class="lb-n" aria-label="Suivante">›</button><div class="lb-c"></div></div>
+<div id="toast"></div>
+<input type="file" id="file-pick" accept="image/*" multiple hidden>
+<input type="file" id="json-pick" accept="application/json,.json" hidden>
+
+<script>
+"use strict";
+/* ============ utilitaires ============ */
+const $ = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad = n => String(n).padStart(2,"0");
+const isoD = d => d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const parseD = s => { const [y,m,d] = String(s).split("-").map(Number); return new Date(y, m-1, d); };
+const todayISO = () => isoD(new Date());
+const num = v => (v === "" || v == null || isNaN(Number(v))) ? NaN : Number(v);
+const uid = p => (p||"t") + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const clone = o => JSON.parse(JSON.stringify(o));
+const MOIS = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
+const JOURS = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
+const nf2 = new Intl.NumberFormat("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const nf0 = new Intl.NumberFormat("fr-FR",{maximumFractionDigits:0});
+function money(v, sign=true){ if(!isFinite(v)) return "—"; const s = v>0 && sign ? "+" : v<0 ? "−" : ""; return s + nf2.format(Math.abs(v)) + " $"; }
+function moneyK(v){ if(!isFinite(v)) return "—"; const a=Math.abs(v); const s=v>0?"+":v<0?"−":""; return s + (a>=10000? nf0.format(a/1000)+" k$" : nf0.format(a)+" $"); }
+const pct = v => isFinite(v) ? nf0.format(v*100)+" %" : "—";
+const cls = v => v>0 ? "pos" : v<0 ? "neg" : "";
+const MC = ["janv.","févr.","mars","avr.","mai","juin","juil.","août","sept.","oct.","nov.","déc."];
+const fmtDate = s => { const d=parseD(s); return d.getDate()+" "+MC[d.getMonth()]+" "+d.getFullYear(); };
+const fmtDateLong = s => { const d=parseD(s); return ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"][d.getDay()]+" "+d.getDate()+" "+MOIS[d.getMonth()]+" "+d.getFullYear(); };
+function toast(msg){ const t=document.createElement("div"); t.textContent=msg; $("#toast").appendChild(t); setTimeout(()=>t.remove(), 3800); }
+
+/* ============ réglages par défaut ============ */
+const DEFAULT_SETTINGS = {
+  instruments: [
+    {sym:"ES", name:"E-mini S&P 500", pv:50, fee:4.5},
+    {sym:"MES", name:"Micro E-mini S&P 500", pv:5, fee:1.5},
+    {sym:"NQ", name:"E-mini Nasdaq-100", pv:20, fee:4.5},
+    {sym:"MNQ", name:"Micro E-mini Nasdaq-100", pv:2, fee:1.5},
+    {sym:"GC", name:"Or COMEX", pv:100, fee:4.8},
+    {sym:"MGC", name:"Micro Or", pv:10, fee:1.8},
+    {sym:"YM", name:"E-mini Dow", pv:5, fee:4.5},
+    {sym:"MYM", name:"Micro Dow", pv:0.5, fee:1.5},
+    {sym:"RTY", name:"E-mini Russell 2000", pv:50, fee:4.5},
+    {sym:"M2K", name:"Micro Russell 2000", pv:5, fee:1.5},
+    {sym:"CL", name:"Pétrole WTI", pv:1000, fee:4.8},
+    {sym:"MCL", name:"Micro WTI", pv:100, fee:1.8}
+  ],
+  accounts: ["Topstep 50K"],
+  mistakes: ["FOMO","Revenge trade","Entrée trop tôt","Stop déplacé","Sortie trop tôt","Taille trop grosse","Hors plan","Overtrading"],
+  tags: ["CPI","FOMC","NFP","PCE","Ouverture US","Tendance","Range","A+ setup"],
+  emotions: ["Calme","Confiant","Concentré","Impatient","Stressé","Frustré","Euphorique"],
+  startBalance: 50000
+};
+
+/* ============ état ============ */
+const S = {
+  uid: null, email: "", rec: {}, outbox: [], syncErr: null, channel: null,
+  trades: [], setups: [], days: {}, settings: clone(DEFAULT_SETTINGS),
+  view: "dashboard",
+  filter: { period: "all", account: "", instrument: "" },
+  tfilter: { q:"", setup:"", result:"", from:"", to:"" },
+  calMonth: (()=>{ const d=new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
+  jDate: todayISO(),
+  drawer: null,             // id du trade ouvert
+  dropTarget: null,         // fonction recevant des fichiers collés/déposés
+  pendingRender: false
+};
+let charts = [];
+
+/* ============ calculs ============ */
+function instr(sym){ return S.settings.instruments.find(i => i.sym === sym); }
+function calc(t){
+  const ins = instr(t.instrument); const pv = ins ? Number(ins.pv) : 1;
+  const dir = t.side === "short" ? -1 : 1;
+  const q = num(t.qty) || 0;
+  const pts = (num(t.exit) - num(t.entry)) * dir;
+  const gross = isFinite(pts) ? pts * pv * q : NaN;
+  const fees = num(t.fees) || 0;
+  let net = isFinite(gross) ? gross - fees : NaN;
+  const manual = t.pnlManual !== null && t.pnlManual !== undefined && t.pnlManual !== "" && isFinite(Number(t.pnlManual));
+  if (manual) net = Number(t.pnlManual);
+  const risk = isFinite(num(t.stop)) && isFinite(num(t.entry)) ? Math.abs(num(t.entry) - num(t.stop)) * pv * q : 0;
+  const r = risk > 0 && isFinite(net) ? net / risk : null;
+  let dur = null;
+  if (t.entryTime && t.exitTime) { const [a,b]=t.entryTime.split(":").map(Number), [c,d]=t.exitTime.split(":").map(Number); dur = (c*60+d)-(a*60+b); if (dur<0) dur += 1440; }
+  return { pts, gross, fees, net: isFinite(net)?net:0, r, risk, dur, manual, pv };
+}
+function C(t){ if(!t._c || t._cv !== S.settingsVer) { Object.defineProperty(t,"_c",{value:calc(t),writable:true,configurable:true,enumerable:false}); Object.defineProperty(t,"_cv",{value:S.settingsVer,writable:true,configurable:true,enumerable:false}); } return t._c; }
+S.settingsVer = 0;
+
+function stats(list){
+  const s = { n:list.length, wins:0, losses:0, be:0, gw:0, gl:0, net:0, rSum:0, rN:0, plan:0, planN:0, fees:0 };
+  const byDay = {};
+  const sorted = [...list].sort(sortTrades);
+  let cum=0, peak=0, dd=0;
+  for (const t of sorted) {
+    const c = C(t);
+    s.net += c.net; s.fees += c.manual?0:c.fees;
+    if (c.net > 0) { s.wins++; s.gw += c.net; } else if (c.net < 0) { s.losses++; s.gl += c.net; } else s.be++;
+    if (c.r != null) { s.rSum += c.r; s.rN++; }
+    if (t.followedPlan === true || t.followedPlan === false) { s.planN++; if (t.followedPlan) s.plan++; }
+    const d = byDay[t.date] || (byDay[t.date] = { date:t.date, pnl:0, n:0, w:0, l:0 });
+    d.pnl += c.net; d.n++; if (c.net>0) d.w++; else if (c.net<0) d.l++;
+    cum += c.net; peak = Math.max(peak, cum); dd = Math.max(dd, peak - cum);
+  }
+  s.winRate = (s.wins + s.losses) ? s.wins / (s.wins + s.losses) : NaN;
+  s.pf = s.gl ? s.gw / Math.abs(s.gl) : (s.gw ? Infinity : NaN);
+  s.avgW = s.wins ? s.gw / s.wins : 0;
+  s.avgL = s.losses ? s.gl / s.losses : 0;
+  s.ratio = s.avgL ? s.avgW / Math.abs(s.avgL) : NaN;
+  s.exp = s.n ? s.net / s.n : NaN;
+  s.avgR = s.rN ? s.rSum / s.rN : NaN;
+  s.maxDD = dd;
+  s.days = Object.values(byDay).sort((a,b)=>a.date.localeCompare(b.date));
+  s.greenDays = s.days.filter(d=>d.pnl>0).length;
+  s.dayWin = s.days.length ? s.greenDays / s.days.length : NaN;
+  s.best = s.days.reduce((m,d)=>Math.max(m,d.pnl), -Infinity);
+  s.worst = s.days.reduce((m,d)=>Math.min(m,d.pnl), Infinity);
+  s.discipline = s.planN ? s.plan / s.planN : NaN;
+  return s;
+}
+function sortTrades(a,b){ return (a.date+(a.entryTime||"")).localeCompare(b.date+(b.entryTime||"")); }
+function score(s){
+  const clamp = v => Math.max(0, Math.min(100, isFinite(v) ? v : 0));
+  const parts = {
+    "Win %": clamp(s.winRate / 0.6 * 100),
+    "Profit factor": clamp((s.pf===Infinity?3:s.pf) / 2.5 * 100),
+    "Gain/Perte moy.": clamp(s.ratio / 2 * 100),
+    "Discipline": clamp(s.discipline * 100),
+    "Régularité": clamp(s.dayWin / 0.7 * 100),
+    "Drawdown": clamp(s.gw ? (1 - s.maxDD / s.gw) * 100 : 0)
+  };
+  const vals = Object.values(parts);
+  return { parts, total: s.n ? vals.reduce((a,b)=>a+b,0) / vals.length : 0 };
+}
+
+/* ============ données d'exemple ============ */
+const DEMO = (() => {
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const setups = [
+    { id:"demo-orb", name:"ORB 5 min", description:"Cassure du range des 5 premières minutes après l'ouverture US (15:30 Bruxelles).", rules:["Range clair des 5 premières minutes","Volume au-dessus de la moyenne","Stop sous le range, objectif 2R"], images:[] },
+    { id:"demo-vwap", name:"Pullback VWAP", description:"Retour sur la VWAP dans une tendance établie.", rules:["Tendance claire sur 15 min","Rejet visible sur la VWAP","Pas d'annonce dans les 15 min"], images:[] },
+    { id:"demo-news", name:"Réaction CPI", description:"Trade de la deuxième impulsion après la publication du CPI (14:30 Bruxelles).", rules:["Attendre la première bougie de 1 min","Entrée sur retracement de 50 %","Taille réduite de moitié"], images:[] }
+  ];
+  const trades = [];
+  const now = new Date();
+  for (let i = 34; i >= 1; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    if (d.getDay() === 0 || d.getDay() === 6) continue;
+    const n = 1 + Math.floor(rnd() * 3);
+    for (let k = 0; k < n; k++) {
+      const gold = rnd() < 0.35;
+      const sym = gold ? (rnd()<0.5?"GC":"MGC") : (rnd()<0.55?"MES":"ES");
+      const base = gold ? 4050 + rnd()*120 : 6780 + rnd()*160;
+      const tick = gold ? 0.1 : 0.25;
+      const side = rnd() < 0.55 ? "long" : "short";
+      const stopPts = gold ? 3 + Math.round(rnd()*4) : 3 + Math.round(rnd()*3);
+      const win = rnd() < 0.56;
+      const move = win ? stopPts * (0.8 + rnd()*1.6) : -stopPts * (0.5 + rnd()*0.55);
+      const round = v => Math.round(v / tick) * tick;
+      const entry = round(base), exit = round(entry + (side==="long"?1:-1) * move);
+      const qty = sym==="MES"||sym==="MGC" ? 2 + Math.floor(rnd()*4) : 1;
+      const h = 15 + Math.floor(rnd()*2), m = 30 + Math.floor(rnd()*28);
+      const setup = setups[Math.floor(rnd()*3)];
+      const mist = !win && rnd() < 0.55 ? [DEFAULT_SETTINGS.mistakes[Math.floor(rnd()*6)]] : [];
+      const fee = { ES:4.5, MES:1.5, GC:4.8, MGC:1.8 }[sym] * qty;
+      trades.push({
+        id:"demo"+trades.length, demo:true, date:isoD(d),
+        entryTime: pad(h)+":"+pad(m), exitTime: pad(h)+":"+pad(Math.min(59, m + 2 + Math.floor(rnd()*20))),
+        instrument:sym, side, entry, exit, qty, stop: round(entry - (side==="long"?1:-1)*stopPts),
+        target: round(entry + (side==="long"?1:-1)*stopPts*2), fees: Math.round(fee*100)/100, pnlManual:null,
+        account:"Topstep 50K", setup: setup.id, mistakes: mist,
+        tags: setup.id==="demo-news" ? ["CPI"] : [rnd()<0.5?"Ouverture US":"Tendance"],
+        emotion: DEFAULT_SETTINGS.emotions[Math.floor(rnd()*5)], rating: win ? 3 + Math.floor(rnd()*3) : 1 + Math.floor(rnd()*3),
+        followedPlan: mist.length ? false : true,
+        notes: win ? "Entrée propre sur le niveau, sortie à l'objectif." : "Entrée sans confirmation, j'aurais dû attendre la clôture de la bougie.",
+        images: []
+      });
+    }
+  }
+  return { trades, setups, imagesMade:false };
+})();
+function demoChart(t){
+  const c = document.createElement("canvas"); c.width = 960; c.height = 540;
+  const g = c.getContext("2d");
+  let seed = t.id.length * 97 + t.date.charCodeAt(9) * 13; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  g.fillStyle = "#0f131c"; g.fillRect(0,0,960,540);
+  g.strokeStyle = "#1c2230"; g.lineWidth = 1;
+  for (let y=40;y<540;y+=60){ g.beginPath(); g.moveTo(0,y); g.lineTo(960,y); g.stroke(); }
+  let p = 270; const pts=[];
+  const win = C(t).net > 0, up = (t.side==="long") === win;
+  for (let i=0;i<60;i++){ const drift = i>30 ? (up?-3.2:3.2) : (rnd()-.5)*2; const o=p; p += drift + (rnd()-.5)*16; const h=Math.min(o,p)-rnd()*12, l=Math.max(o,p)+rnd()*12; pts.push([o,p,h,l]); }
+  pts.forEach(([o,cl,h,l],i)=>{ const x=20+i*15.5; g.strokeStyle=g.fillStyle = cl<o ? "#25c48c" : "#ff5f68"; g.beginPath(); g.moveTo(x+5,h); g.lineTo(x+5,l); g.stroke(); g.fillRect(x, Math.min(o,cl), 10, Math.max(2,Math.abs(cl-o))); });
+  const ey = pts[30][1], xy = pts[52][1];
+  g.setLineDash([6,5]); g.lineWidth=2;
+  g.strokeStyle="#7390ff"; g.beginPath(); g.moveTo(480,ey); g.lineTo(960,ey); g.stroke();
+  g.strokeStyle= win?"#25c48c":"#ff5f68"; g.beginPath(); g.moveTo(830,xy); g.lineTo(960,xy); g.stroke();
+  g.setLineDash([]); g.font="600 18px monospace"; g.fillStyle="#e6e9f1";
+  g.fillText(t.instrument+" · 1 min · "+(t.side==="long"?"Long":"Short")+" · exemple", 22, 30);
+  return c.toDataURL("image/jpeg", .82);
+}
+function ensureDemoImages(){
+  if (DEMO.imagesMade) return; DEMO.imagesMade = true;
+  DEMO.trades.forEach((t,i)=>{ if (i%3===0) t.images=[{id:null,url:demoChart(t)}]; });
+}
+
+/* ============ accès données (Supabase + cache hors-ligne) ============ */
+const isDemo = () => S.trades.length === 0;
+const allTrades = () => isDemo() ? DEMO.trades : S.trades;
+const allSetups = () => (S.setups.length || !isDemo()) ? S.setups : DEMO.setups;
+const setupName = id => (allSetups().find(s=>s.id===id)||{}).name || "";
+const LS = {
+  get(k, d){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e) { return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch(e) { return false; } },
+  del(k){ try { localStorage.removeItem(k); } catch(e) {} }
+};
+let SB = null;
+const PIX = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+S.signed = LS.get("tj-signed", {}); S.localUrl = {};
+const signQ = new Set(); let signT = null;
+function srcOf(im){
+  if (!im) return PIX;
+  if (im.url) return im.url;
+  if (S.localUrl[im.path]) return S.localUrl[im.path];
+  const c = S.signed[im.path];
+  if (c && c.exp > Date.now() + 3600e3) return c.u;
+  signQ.add(im.path); clearTimeout(signT); signT = setTimeout(signNow, 30);
+  return PIX;
+}
+function srcAttr(im){ return `src="${esc(srcOf(im))}"` + (im && im.path ? ` data-path="${esc(im.path)}"` : ""); }
+const imgSrc = srcOf;
+async function signNow(){
+  const paths = [...signQ]; signQ.clear();
+  if (!paths.length || !SB || !navigator.onLine) return;
+  const { data, error } = await SB.storage.from("captures").createSignedUrls(paths, 7*86400);
+  if (error || !data) return;
+  const exp = Date.now() + 7*86400e3 - 60e3;
+  data.forEach(d => { if (d.signedUrl && d.path) S.signed[d.path] = { u: d.signedUrl, exp }; });
+  for (const k in S.signed) if (S.signed[k].exp < Date.now()) delete S.signed[k];
+  LS.set("tj-signed", S.signed);
+  $$("img[data-path]").forEach(img => { if (S.localUrl[img.dataset.path]) return; const c = S.signed[img.dataset.path]; if (c && img.getAttribute("src") !== c.u) img.src = c.u; });
+}
+
+function setStatus(kind, txt){ const d=$("#st-dot"); if (!d) return; d.className="dot"+(kind==="ok"?" ok":kind==="bad"?" bad":""); $("#st-txt").textContent=txt; }
+function setSync(){
+  const n = S.outbox.length;
+  if (!navigator.onLine) setStatus("bad", n ? `Hors ligne · ${n} modif. en attente` : "Hors ligne");
+  else if (n) setStatus("", `${n} modif. à envoyer…`);
+  else if (S.syncErr) setStatus("bad", "Erreur de synchro, nouvel essai bientôt");
+  else setStatus("ok", "Synchronisé");
+}
+function rebuild(){
+  const tr = [], se = [], days = {}; let st = null;
+  for (const [id, r] of Object.entries(S.rec)) {
+    if (r.kind === "trade") tr.push({ ...r.data, id });
+    else if (r.kind === "setup") se.push({ ...r.data, id });
+    else if (r.kind === "day") days[id] = { ...r.data, date: id };
+    else if (r.kind === "settings") st = r.data;
+  }
+  S.trades = tr; S.setups = se.sort((a,b) => (a.name||"").localeCompare(b.name||"")); S.days = days;
+  S.settings = st ? { ...clone(DEFAULT_SETTINGS), ...st } : clone(DEFAULT_SETTINGS);
+  S.settingsVer++;
+}
+function persist(){ LS.set("tj-cache-"+S.uid, S.rec); LS.set("tj-outbox-"+S.uid, S.outbox); }
+function put(kind, id, data){
+  const now = new Date().toISOString();
+  S.rec[id] = { kind, data, updated_at: now };
+  S.outbox = S.outbox.filter(o => o.id !== id);
+  S.outbox.push({ op:"upsert", id, kind, data, updated_at: now });
+  afterWrite();
+}
+function remove(id){
+  delete S.rec[id];
+  S.outbox = S.outbox.filter(o => o.id !== id);
+  S.outbox.push({ op:"delete", id });
+  afterWrite();
+}
+function afterWrite(){ rebuild(); persist(); dataChanged(); flush(); }
+let flushing = false;
+async function flush(){
+  if (flushing || !SB || !S.uid) return;
+  if (!S.outbox.length || !navigator.onLine) { setSync(); return; }
+  flushing = true; setSync();
+  try {
+    while (S.outbox.length) {
+      const o = S.outbox[0]; let res;
+      if (o.op === "upsert") res = await SB.from("records").upsert({ user_id:S.uid, id:o.id, kind:o.kind, data:o.data, updated_at:o.updated_at }, { onConflict:"user_id,id" });
+      else res = await SB.from("records").delete().eq("user_id", S.uid).eq("id", o.id);
+      if (res.error) throw res.error;
+      const i = S.outbox.indexOf(o); if (i >= 0) S.outbox.splice(i, 1);
+      persist();
+    }
+    S.syncErr = null;
+  } catch(e) {
+    console.warn("sync", e);
+    if (!S.syncErr) toast("Synchronisation impossible pour l'instant : tes modifications restent sur cet appareil et repartiront automatiquement.");
+    S.syncErr = e;
+  }
+  flushing = false; setSync();
+}
+async function pull(){
+  if (!SB || !navigator.onLine) { setSync(); return; }
+  try {
+    const all = []; const step = 1000;
+    for (let from = 0; ; from += step) {
+      const { data, error } = await SB.from("records").select("id,kind,data,updated_at").order("id").range(from, from + step - 1);
+      if (error) throw error;
+      all.push(...data); if (data.length < step) break;
+    }
+    const rec = {};
+    all.forEach(r => rec[r.id] = { kind:r.kind, data:r.data, updated_at:r.updated_at });
+    for (const o of S.outbox) { if (o.op === "upsert") rec[o.id] = { kind:o.kind, data:o.data, updated_at:o.updated_at }; else delete rec[o.id]; }
+    S.rec = rec; rebuild(); persist(); dataChanged(); S.syncErr = null;
+  } catch(e) { console.warn("pull", e); S.syncErr = e; }
+  setSync();
+}
+function subscribe(){
+  if (S.channel) SB.removeChannel(S.channel);
+  S.channel = SB.channel("records-" + S.uid)
+    .on("postgres_changes", { event:"*", schema:"public", table:"records" }, p => {
+      if (p.eventType === "DELETE") {
+        const o = p.old || {}; if (o.user_id && o.user_id !== S.uid) return;
+        if (!o.id || S.outbox.some(x => x.id === o.id)) return; delete S.rec[o.id];
+      } else {
+        const r = p.new || {}; if (r.user_id !== S.uid || S.outbox.some(x => x.id === r.id)) return;
+        S.rec[r.id] = { kind:r.kind, data:r.data, updated_at:r.updated_at };
+      }
+      rebuild(); persist(); dataChanged();
+    }).subscribe();
+}
+
+function dataChanged(){
+  const a = document.activeElement;
+  if (a && $("#main").contains(a) && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && a.type !== "file") { S.pendingRender = true; return; }
+  render();
+}
+document.addEventListener("focusout", () => setTimeout(()=>{ if (S.pendingRender) { const a=document.activeElement; if (!(a && $("#main").contains(a) && /INPUT|TEXTAREA|SELECT/.test(a.tagName))) { S.pendingRender=false; render(); } } }, 50));
+
+const strip = o => { const b = clone(o); delete b.id; delete b.demo; delete b.date_; return b; };
+async function saveTrade(t){ put("trade", t.id, strip(t)); }
+async function deleteTrade(id){ const t = S.trades.find(x=>x.id===id); remove(id); if (t) purgeImages(t.images); }
+async function saveSetup(s){ put("setup", s.id, strip(s)); }
+async function deleteSetup(id){ const s = S.setups.find(x=>x.id===id); remove(id); if (s) purgeImages(s.images); }
+async function saveDay(d){ const b = clone(d); delete b.date; put("day", d.date, b); }
+async function saveSettings(st){ put("settings", "settings", clone(st)); }
+function purgeImages(list){
+  const paths = (list||[]).map(i=>i.path).filter(Boolean);
+  if (paths.length && SB && navigator.onLine) SB.storage.from("captures").remove(paths).catch(()=>{});
+}
+
+function compress(file, max=2200, q=.88){
+  return new Promise((res, rej) => {
+    const img = new Image(); const u = URL.createObjectURL(file);
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width*k); c.height = Math.round(img.height*k);
+      const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0,0,c.width,c.height); g.drawImage(img,0,0,c.width,c.height);
+      URL.revokeObjectURL(u); c.toBlob(b => b ? res(b) : rej(new Error("encodage")), "image/jpeg", q);
+    };
+    img.onerror = () => { URL.revokeObjectURL(u); rej(new Error("image illisible")); }; img.src = u;
+  });
+}
+async function uploadImages(files){
+  const out = [];
+  if (!navigator.onLine) { toast("Pas de connexion : les captures ne peuvent pas être envoyées hors ligne."); return out; }
+  for (const f of files) {
+    if (!f || !/^image\//.test(f.type)) continue;
+    try {
+      const blob = await compress(f);
+      const path = S.uid + "/" + uid("i") + ".jpg";
+      const { error } = await SB.storage.from("captures").upload(path, blob, { contentType:"image/jpeg", cacheControl:"31536000", upsert:false });
+      if (error) throw error;
+      S.localUrl[path] = URL.createObjectURL(blob);
+      out.push({ path });
+    } catch(e) { console.warn(e); toast("Échec de l'envoi de " + (f.name || "la capture") + "."); }
+  }
+  return out;
+}
+
+/* ============ filtres ============ */
+function periodStart(p){
+  const n = new Date(); const t = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+  if (p==="7") return isoD(new Date(t - 6*864e5));
+  if (p==="30") return isoD(new Date(t - 29*864e5));
+  if (p==="week") { const k=(t.getDay()+6)%7; return isoD(new Date(t - k*864e5)); }
+  if (p==="month") return isoD(new Date(t.getFullYear(), t.getMonth(), 1));
+  if (p==="year") return isoD(new Date(t.getFullYear(), 0, 1));
+  return "";
+}
+function applyFilter(list){
+  const f = S.filter, from = periodStart(f.period);
+  return list.filter(t => (!from || t.date >= from) && (!f.account || t.account===f.account) && (!f.instrument || t.instrument===f.instrument));
+}
+function filterBar(){
+  const f = S.filter, tr = allTrades();
+  const accs = [...new Set(tr.map(t=>t.account).filter(Boolean).concat(S.settings.accounts))];
+  const ins = [...new Set(tr.map(t=>t.instrument))].sort();
+  const per = [["all","Tout"],["week","Semaine"],["month","Mois"],["30","30 j"],["year","Année"]];
+  return `<div class="filters">
+    <div class="seg" role="group" aria-label="Période">${per.map(([k,l])=>`<button data-act="period" data-k="${k}" class="${f.period===k?"on":""}">${l}</button>`).join("")}</div>
+    <select id="flt-acc" aria-label="Compte"><option value="">Tous les comptes</option>${accs.map(a=>`<option ${a===f.account?"selected":""}>${esc(a)}</option>`).join("")}</select>
+    <select id="flt-ins" aria-label="Instrument"><option value="">Tous les instruments</option>${ins.map(a=>`<option ${a===f.instrument?"selected":""}>${esc(a)}</option>`).join("")}</select>
+  </div>`;
+}
+function demoBanner(){
+  if (!isDemo()) return "";
+  return `<div class="banner"><span><b>Données d'exemple.</b> Elles disparaissent dès que tu enregistres ton premier trade.</span><button class="btn primary sm" data-act="new-trade">+ Ajouter mon premier trade</button></div>`;
+}
+function modeBanner(){
+  return "";
+}
+
+/* ============ rendu ============ */
+function render(){
+  S.pendingRender = false;
+  if (isDemo()) ensureDemoImages();
+  charts.forEach(c=>c.destroy()); charts = [];
+  $$("#nav a").forEach(a => a.classList.toggle("on", a.dataset.v === S.view));
+  const m = $("#main"); const top = m.scrollTop;
+  const V = { dashboard:vDashboard, trades:vTrades, calendrier:vCalendar, journal:vJournal, playbook:vPlaybook, reglages:vSettings }[S.view] || vDashboard;
+  m.innerHTML = modeBanner() + V();
+  m.scrollTop = top;
+  if (S.afterRender) { const f=S.afterRender; S.afterRender=null; f(); }
+  if (S.view==="dashboard") drawDashboardCharts();
+  if (S.drawer) renderDrawer();
+}
+
+function kpiTile(lbl, val, sub, extra="", c=""){ return `<div class="kpi"><div class="lbl"><span>${lbl}</span></div><div class="val ${c}">${val}</div>${sub?`<div class="sub">${sub}</div>`:""}${extra}</div>`; }
+
+function vDashboard(){
+  const list = applyFilter(allTrades()); const s = stats(list); const sc = score(s);
+  const bySetup = groupStats(list, t => setupName(t.setup) || "Sans setup");
+  const byIns = groupStats(list, t => t.instrument);
+  const misMap = {};
+  list.forEach(t => (t.mistakes||[]).forEach(m => { const o = misMap[m] || (misMap[m]={n:0,pnl:0}); o.n++; o.pnl += C(t).net; }));
+  const mis = Object.entries(misMap).sort((a,b)=>a[1].pnl-b[1].pnl);
+  const recent = [...list].sort(sortTrades).reverse().slice(0,8);
+  return `
+  <div class="page-head"><div><h1>Dashboard</h1><p>${s.n} trades · ${s.days.length} jour${s.days.length>1?"s":""} tradé${s.days.length>1?"s":""}</p></div><button class="btn primary" data-act="new-trade">+ Nouveau trade</button></div>
+  ${demoBanner()}${filterBar()}
+  <div class="kpis">
+    ${kpiTile("P&L net", money(s.net), `${moneyK(s.fees)} de frais`, "", cls(s.net))}
+    ${kpiTile("Win rate", pct(s.winRate), `${s.wins} gagnants · ${s.losses} perdants`, `<div class="bar2"><i style="width:${isFinite(s.winRate)?s.winRate*100:0}%"></i></div>`)}
+    ${kpiTile("Profit factor", isFinite(s.pf)? nf2.format(s.pf) : s.pf===Infinity?"∞":"—", "gains bruts ÷ pertes brutes")}
+    ${kpiTile("Gain moy. / Perte moy.", isFinite(s.ratio)? nf2.format(s.ratio) : "—", `<span class="pos">${money(s.avgW)}</span> / <span class="neg">${money(s.avgL)}</span>`)}
+    ${kpiTile("Espérance / trade", money(s.exp), isFinite(s.avgR)? `R moyen ${nf2.format(s.avgR)}` : "ajoute un stop pour le R", "", cls(s.exp))}
+    ${kpiTile("Jours verts", pct(s.dayWin), `${s.greenDays} / ${s.days.length} jours · DD max ${moneyK(-s.maxDD)}`)}
+  </div>
+  <div class="grid g-main" style="margin-bottom:14px">
+    <div class="card"><div class="card-head"><h2>P&L cumulé</h2><span class="muted num">${money(s.net)}</span></div><div class="chart-box"><canvas id="ch-cum"></canvas></div></div>
+    <div class="card"><div class="card-head"><h2>Score trader</h2><span class="score-ring ${sc.total>=60?"pos":sc.total<40?"neg":""}">${nf0.format(sc.total)}</span></div><div class="chart-box"><canvas id="ch-radar"></canvas></div></div>
+  </div>
+  <div class="grid g-2" style="margin-bottom:14px">
+    <div class="card"><div class="card-head"><h2>P&L par jour</h2><span class="muted">meilleur ${moneyK(s.best)} · pire ${moneyK(s.worst)}</span></div><div class="chart-box sm"><canvas id="ch-daily"></canvas></div></div>
+    <div class="card"><div class="card-head"><h2>P&L par heure d'entrée</h2><span class="muted">heure saisie</span></div><div class="chart-box sm"><canvas id="ch-hour"></canvas></div></div>
+  </div>
+  <div class="grid g-3" style="margin-bottom:14px">
+    <div class="card"><h2>Par setup</h2>${groupTable(bySetup, true)}</div>
+    <div class="card"><h2>Par instrument</h2>${groupTable(byIns)}</div>
+    <div class="card"><h2>Coût des erreurs</h2>${mis.length ? `<div class="tbl-wrap"><table><thead><tr><th>Erreur</th><th class="r">Fois</th><th class="r">P&L</th></tr></thead><tbody>${mis.map(([k,v])=>`<tr><td><span class="chip mis">${esc(k)}</span></td><td class="r num">${v.n}</td><td class="r num ${cls(v.pnl)}">${money(v.pnl)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="muted">Aucune erreur taguée sur la période.</p>`}</div>
+  </div>
+  <div class="grid g-2">
+    <div class="card"><h2>Par jour de la semaine</h2><div class="chart-box sm"><canvas id="ch-wd"></canvas></div></div>
+    <div class="card"><div class="card-head"><h2>Derniers trades</h2><a href="#trades">Tout voir</a></div>${miniTradeTable(recent)}</div>
+  </div>`;
+}
+function groupStats(list, keyFn){
+  const g = {};
+  list.forEach(t => { const k = keyFn(t); (g[k] || (g[k]=[])).push(t); });
+  return Object.entries(g).map(([k,arr]) => ({ k, s: stats(arr) })).sort((a,b)=>b.s.net-a.s.net);
+}
+function groupTable(rows){
+  if (!rows.length) return `<p class="muted">Pas de données.</p>`;
+  return `<div class="tbl-wrap"><table><thead><tr><th></th><th class="r">Trades</th><th class="r">Win</th><th class="r">P&L</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.k)}</td><td class="r num">${r.s.n}</td><td class="r num">${pct(r.s.winRate)}</td><td class="r num ${cls(r.s.net)}">${money(r.s.net)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+function miniTradeTable(list){
+  if (!list.length) return `<p class="muted">Aucun trade.</p>`;
+  return `<div class="tbl-wrap"><table><tbody>${list.map(t=>{ const c=C(t); return `<tr class="click" data-act="open" data-id="${esc(t.id)}"><td class="num muted">${fmtDate(t.date)}</td><td><b>${esc(t.instrument)}</b> <span class="chip ${t.side}">${t.side==="long"?"Long":"Short"}</span></td><td class="muted">${esc(setupName(t.setup))}</td><td class="r num ${cls(c.net)}">${money(c.net)}</td></tr>`; }).join("")}</tbody></table></div>`;
+}
+
+function css(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function chartDefaults(){
+  if (!window.Chart) return false;
+  Chart.defaults.color = css("--muted"); Chart.defaults.font.family = "IBM Plex Sans, system-ui, sans-serif"; Chart.defaults.font.size = 11.5;
+  Chart.defaults.borderColor = css("--line"); Chart.defaults.plugins.legend.display = false; Chart.defaults.maintainAspectRatio = false;
+  Chart.defaults.plugins.tooltip.callbacks.label = ctx => " " + money(ctx.parsed.y ?? ctx.parsed.r ?? ctx.parsed);
+  return true;
+}
+function mk(id, cfg){ const el = document.getElementById(id); if (!el) return; charts.push(new Chart(el, cfg)); }
+function drawDashboardCharts(){
+  if (!chartDefaults()) { $$(".chart-box").forEach(b=>b.innerHTML=`<p class="muted">Graphiques indisponibles (bibliothèque non chargée).</p>`); return; }
+  const list = applyFilter(allTrades()); const s = stats(list); const sc = score(s);
+  const win = css("--win"), loss = css("--loss"), acc = css("--accent");
+  let cum = 0; const cumData = s.days.map(d => (cum += d.pnl));
+  const lbl = s.days.map(d => fmtDate(d.date));
+  const yMoney = { ticks: { callback: v => moneyK(v) }, grid: { color: css("--line") } };
+  mk("ch-cum", { type:"line", data:{ labels:lbl, datasets:[{ data:cumData, borderColor: cum>=0?win:loss, borderWidth:2, tension:.25, pointRadius: cumData.map((_,i)=>i===cumData.length-1?4:0), pointBackgroundColor: cum>=0?win:loss, fill:{ target:"origin", above: hexA(win,.14), below: hexA(loss,.14) } }] },
+    options:{ scales:{ x:{ grid:{display:false}, ticks:{maxTicksLimit:7} }, y:yMoney }, interaction:{intersect:false, mode:"index"} } });
+  mk("ch-daily", { type:"bar", data:{ labels:lbl, datasets:[{ data:s.days.map(d=>d.pnl), backgroundColor:s.days.map(d=>d.pnl>=0?win:loss), borderRadius:3, maxBarThickness:22 }] },
+    options:{ scales:{ x:{ grid:{display:false}, ticks:{maxTicksLimit:7} }, y:yMoney } } });
+  const hours = {}; list.forEach(t => { if (!t.entryTime) return; const h = t.entryTime.slice(0,2)+"h"; hours[h] = (hours[h]||0) + C(t).net; });
+  const hk = Object.keys(hours).sort();
+  mk("ch-hour", { type:"bar", data:{ labels:hk, datasets:[{ data:hk.map(k=>hours[k]), backgroundColor:hk.map(k=>hours[k]>=0?win:loss), borderRadius:3, maxBarThickness:34 }] }, options:{ scales:{ x:{grid:{display:false}}, y:yMoney } } });
+  const wd = [0,0,0,0,0,0,0]; list.forEach(t => { wd[(parseD(t.date).getDay()+6)%7] += C(t).net; });
+  const wdk = [0,1,2,3,4].concat(wd[5]||wd[6]?[5,6]:[]);
+  mk("ch-wd", { type:"bar", data:{ labels:wdk.map(i=>JOURS[i]), datasets:[{ data:wdk.map(i=>wd[i]), backgroundColor:wdk.map(i=>wd[i]>=0?win:loss), borderRadius:3, maxBarThickness:40 }] }, options:{ scales:{ x:{grid:{display:false}}, y:yMoney } } });
+  const pk = Object.keys(sc.parts);
+  mk("ch-radar", { type:"radar", data:{ labels:pk, datasets:[{ data:pk.map(k=>sc.parts[k]), borderColor:acc, backgroundColor:hexA(acc,.18), borderWidth:2, pointRadius:3, pointBackgroundColor:acc }] },
+    options:{ scales:{ r:{ min:0, max:100, ticks:{ display:false, stepSize:25 }, grid:{ color:css("--line") }, angleLines:{ color:css("--line") }, pointLabels:{ font:{ size:11 } } } }, plugins:{ tooltip:{ callbacks:{ label: c => " " + nf0.format(c.parsed.r) + " / 100" } } } } });
+}
+function hexA(c, a){ c = c.replace("#",""); if (c.length===3) c = c.split("").map(x=>x+x).join(""); const n = parseInt(c,16); return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`; }
+
+/* ---- Trades ---- */
+function vTrades(){
+  const f = S.tfilter;
+  let list = applyFilter(allTrades()).filter(t => {
+    const c = C(t);
+    if (f.setup && t.setup !== f.setup) return false;
+    if (f.result==="win" && !(c.net>0)) return false;
+    if (f.result==="loss" && !(c.net<0)) return false;
+    if (f.from && t.date < f.from) return false;
+    if (f.to && t.date > f.to) return false;
+    if (f.q) { const q = f.q.toLowerCase(); const hay = [t.instrument, t.notes, setupName(t.setup), ...(t.tags||[]), ...(t.mistakes||[]), t.emotion, t.account].join(" ").toLowerCase(); if (!hay.includes(q)) return false; }
+    return true;
+  }).sort(sortTrades).reverse();
+  const s = stats(list);
+  return `
+  <div class="page-head"><div><h1>Trades</h1><p>${list.length} trade${list.length>1?"s":""} · <span class="${cls(s.net)} num">${money(s.net)}</span> · win ${pct(s.winRate)}</p></div><button class="btn primary" data-act="new-trade">+ Nouveau trade</button></div>
+  ${demoBanner()}${filterBar()}
+  <div class="filters">
+    <input type="search" id="tf-q" placeholder="Rechercher (note, tag, erreur…)" value="${esc(f.q)}" style="width:240px">
+    <select id="tf-setup"><option value="">Tous les setups</option>${allSetups().map(x=>`<option value="${esc(x.id)}" ${x.id===f.setup?"selected":""}>${esc(x.name)}</option>`).join("")}</select>
+    <select id="tf-res"><option value="">Gagnants et perdants</option><option value="win" ${f.result==="win"?"selected":""}>Gagnants</option><option value="loss" ${f.result==="loss"?"selected":""}>Perdants</option></select>
+    <label class="muted" for="tf-from">Du</label><input type="date" id="tf-from" value="${esc(f.from)}">
+    <label class="muted" for="tf-to">au</label><input type="date" id="tf-to" value="${esc(f.to)}">
+  </div>
+  <div class="card" style="padding:4px 8px">${list.length ? `<div class="tbl-wrap"><table>
+    <thead><tr><th>Date</th><th>Heure</th><th>Instrument</th><th>Sens</th><th class="r">Qté</th><th class="r">Entrée</th><th class="r">Sortie</th><th class="r">P&L net</th><th class="r">R</th><th>Setup</th><th>Erreurs</th><th>Note</th><th></th></tr></thead>
+    <tbody>${list.map(t => { const c = C(t); return `<tr class="click" data-act="open" data-id="${esc(t.id)}">
+      <td class="num">${fmtDate(t.date)}</td><td class="num muted">${esc(t.entryTime||"")}</td><td><b>${esc(t.instrument)}</b></td>
+      <td><span class="chip ${t.side}">${t.side==="long"?"Long":"Short"}</span></td><td class="r num">${esc(t.qty)}</td>
+      <td class="r num">${isFinite(num(t.entry))?esc(t.entry):"—"}</td><td class="r num">${isFinite(num(t.exit))?esc(t.exit):"—"}</td>
+      <td class="r num ${cls(c.net)}"><b>${money(c.net)}</b></td><td class="r num ${cls(c.r)}">${c.r!=null?nf2.format(c.r)+"R":"—"}</td>
+      <td>${esc(setupName(t.setup))}</td><td>${(t.mistakes||[]).map(m=>`<span class="chip mis">${esc(m)}</span>`).join(" ")}</td>
+      <td>${starsRO(t.rating)}</td><td class="muted">${(t.images||[]).length?`<span title="captures">▣ ${(t.images||[]).length}</span>`:""}</td></tr>`; }).join("")}</tbody></table></div>` : `<div class="empty">Aucun trade ne correspond à ces filtres.</div>`}</div>`;
+}
+function starsRO(n){ n = Number(n)||0; return `<span class="stars ro" aria-label="${n} sur 5">${[1,2,3,4,5].map(i=>`<span class="${i<=n?"on":""}">★</span>`).join("")}</span>`; }
+
+/* ---- Calendrier ---- */
+function vCalendar(){
+  const m = S.calMonth; const y = m.getFullYear(), mo = m.getMonth();
+  const list = applyFilter(allTrades()).filter(t => { const d=parseD(t.date); return d.getFullYear()===y && d.getMonth()===mo; });
+  const s = stats(list); const byDay = {}; s.days.forEach(d=>byDay[d.date]=d);
+  const first = new Date(y, mo, 1); const start = new Date(y, mo, 1 - ((first.getDay()+6)%7));
+  const today = todayISO();
+  let cells = JOURS.map(j=>`<div class="hd">${j}</div>`).join("") + `<div class="hd wk">Semaine</div>`;
+  let d = new Date(start); let w = 0;
+  while (true) {
+    let wk = { pnl:0, n:0, days:0 };
+    for (let i=0;i<7;i++) {
+      const iso = isoD(d), inM = d.getMonth()===mo, dd = byDay[iso], j = S.days[iso];
+      if (dd && inM) { wk.pnl += dd.pnl; wk.n += dd.n; wk.days++; }
+      const k = dd ? (dd.pnl>0?"win":dd.pnl<0?"loss":"") : "";
+      cells += `<button class="cday ${inM?"":"out"} ${k} ${iso===today?"today":""}" data-act="day" data-d="${iso}" aria-label="${fmtDateLong(iso)}">
+        <span class="dn">${d.getDate()}</span>
+        ${dd ? `<span class="p ${cls(dd.pnl)}">${moneyK(dd.pnl)}</span><span class="m">${dd.n} trade${dd.n>1?"s":""} · ${pct(dd.w/(dd.w+dd.l||1))}</span>` : ""}
+        <span class="ic">${j && (j.premarket||j.review) ? "✎ journal" : ""}</span></button>`;
+      d.setDate(d.getDate()+1);
+    }
+    w++;
+    cells += `<div class="cweek wk"><small>Semaine ${w}</small><b class="${cls(wk.pnl)}">${wk.n?money(wk.pnl):"—"}</b><small>${wk.days} jour${wk.days>1?"s":""} · ${wk.n} trades</small></div>`;
+    if (d.getMonth() !== mo || d.getFullYear() !== y) break;
+  }
+  return `
+  <div class="page-head"><div><h1>Calendrier</h1><p>${MOIS[mo]} ${y} · <span class="num ${cls(s.net)}">${money(s.net)}</span> · ${s.days.length} jour${s.days.length>1?"s":""} tradé${s.days.length>1?"s":""} · ${s.greenDays} verts</p></div>
+    <div style="display:flex;gap:6px"><button class="btn" data-act="cal" data-k="-1" aria-label="Mois précédent">‹</button><button class="btn" data-act="cal" data-k="0">Aujourd'hui</button><button class="btn" data-act="cal" data-k="1" aria-label="Mois suivant">›</button></div></div>
+  ${demoBanner()}${filterBar()}
+  <div class="cal">${cells}</div>
+  <p class="muted" style="margin-top:10px">Clique sur un jour pour ouvrir ses trades et son journal.</p>`;
+}
+
+/* ---- Journal quotidien ---- */
+const MOODS = ["","Très mauvaise","Mauvaise","Neutre","Bonne","Excellente"];
+function vJournal(){
+  const tr = allTrades();
+  const dates = [...new Set(tr.map(t=>t.date).concat(Object.keys(S.days)).concat([todayISO(), S.jDate]))].sort().reverse();
+  const sel = S.jDate; const j = S.days[sel] || {};
+  const dayTrades = tr.filter(t=>t.date===sel).sort(sortTrades);
+  const s = stats(dayTrades);
+  const listHtml = dates.slice(0,120).map(ds => { const st = stats(tr.filter(t=>t.date===ds)); const has = S.days[ds]; return `<button class="j-item ${ds===sel?"on":""}" data-act="jdate" data-d="${ds}"><span>${fmtDate(ds)}<small>${st.n?st.n+" trade"+(st.n>1?"s":""):"pas de trade"}${has?" · ✎":""}</small></span><span class="num ${cls(st.net)}">${st.n?moneyK(st.net):""}</span></button>`; }).join("");
+  const imgs = j.images || [];
+  return `
+  <div class="page-head"><div><h1>Journal quotidien</h1><p>Prépare ta session, puis fais ta revue après la clôture.</p></div></div>
+  <div class="j-layout">
+    <div class="card" style="padding:10px"><label class="f" for="j-pick"><span>Aller à la date</span><input type="date" id="j-pick" value="${sel}"></label><div class="j-list" style="margin-top:10px">${listHtml}</div></div>
+    <div class="grid">
+      <div class="card">
+        <div class="card-head"><h2>${fmtDateLong(sel)}</h2><span class="num ${cls(s.net)}">${s.n? money(s.net)+" · "+s.n+" trades · win "+pct(s.winRate) : "aucun trade"}</span></div>
+        <div class="form-grid">
+          <label class="f span2" for="j-bias"><span>Biais du jour</span><select id="j-bias">${["","Haussier","Baissier","Neutre / range"].map(o=>`<option ${o===(j.bias||"")?"selected":""}>${o}</option>`).join("")}</select></label>
+          <label class="f span2" for="j-news"><span>Annonces macro du jour</span><input type="text" id="j-news" value="${esc(j.news||"")}" placeholder="ex. CPI 14:30, FOMC 20:00"></label>
+          <label class="f span4" for="j-pre"><span>Plan pré-market</span><textarea id="j-pre" rows="4" placeholder="Niveaux clés, scénarios, setups à surveiller, risque max du jour…">${esc(j.premarket||"")}</textarea></label>
+          <label class="f span2" for="j-mood"><span>Humeur</span><select id="j-mood">${[0,1,2,3,4,5].map(i=>`<option value="${i}" ${Number(j.mood||0)===i?"selected":""}>${i?i+" · "+MOODS[i]:"—"}</option>`).join("")}</select></label>
+          <label class="f span2" for="j-plan"><span>Plan respecté</span><select id="j-plan">${["","Oui","Partiellement","Non"].map(o=>`<option ${o===(j.plan||"")?"selected":""}>${o}</option>`).join("")}</select></label>
+          <label class="f span4" for="j-rev"><span>Revue post-market</span><textarea id="j-rev" rows="4" placeholder="Ce qui a marché, ce qui n'a pas marché, exécution…">${esc(j.review||"")}</textarea></label>
+          <label class="f span4" for="j-les"><span>Leçons / à retenir</span><textarea id="j-les" rows="2">${esc(j.lessons||"")}</textarea></label>
+        </div>
+        <div class="sec-title">Captures du jour</div>
+        <div class="thumb-row" id="j-imgs">${imgs.map((im,i)=>`<div class="thumb" data-act="lb" data-set="day" data-i="${i}"><img ${srcAttr(im)} alt="Capture ${i+1}"><button class="x" data-act="j-rmimg" data-i="${i}" aria-label="Retirer">×</button></div>`).join("")}</div>
+        <div class="drop" id="j-drop" data-act="pick" style="margin-top:8px"><b>Glisse, colle (⌘V) ou clique</b> pour ajouter des captures du marché du jour</div>
+        <div class="modal-foot"><span class="muted" id="j-msg"></span><button class="btn primary" data-act="j-save">Enregistrer le journal</button></div>
+      </div>
+      <div class="card"><h2>Trades du jour</h2>${miniTradeTable(dayTrades)}
+        ${dayTrades.some(t=>(t.images||[]).length) ? `<div class="sec-title">Captures des trades</div><div class="thumb-row">${dayTrades.flatMap(t=>(t.images||[]).map(im=>`<div class="thumb" data-act="open" data-id="${esc(t.id)}"><img ${srcAttr(im)} alt="Capture ${esc(t.instrument)}"></div>`)).join("")}</div>`:""}
+        <div style="margin-top:10px"><button class="btn sm" data-act="new-trade" data-date="${sel}">+ Trade à cette date</button></div></div>
+    </div>
+  </div>`;
+}
+function journalDraft(){
+  const sel = S.jDate; const prev = S.days[sel] || {};
+  return { date: sel, bias: $("#j-bias").value, news: $("#j-news").value.trim(), premarket: $("#j-pre").value, mood: Number($("#j-mood").value), plan: $("#j-plan").value, review: $("#j-rev").value, lessons: $("#j-les").value, images: S.jImgs || prev.images || [] };
+}
+
+/* ---- Playbook ---- */
+function vPlaybook(){
+  const tr = allTrades(); const setups = allSetups();
+  return `
+  <div class="page-head"><div><h1>Playbook</h1><p>Tes setups, leurs règles et leurs statistiques réelles.</p></div><button class="btn primary" data-act="new-setup">+ Nouveau setup</button></div>
+  ${(!S.setups.length && isDemo()) ? `<div class="banner"><span><b>Setups d'exemple.</b> Crée les tiens pour les remplacer.</span></div>` : ""}
+  ${setups.length ? `<div class="pb-grid">${setups.map(x => { const s = stats(tr.filter(t=>t.setup===x.id)); return `
+    <div class="card pb">
+      <div class="card-head"><h2>${esc(x.name)}</h2>${x.id.startsWith("demo")?"":`<button class="btn sm ghost" data-act="edit-setup" data-id="${esc(x.id)}">Modifier</button>`}</div>
+      ${(x.images||[]).length ? `<img class="pb-img" ${srcAttr(x.images[0])} alt="Exemple ${esc(x.name)}" data-act="lb" data-set="setup" data-id="${esc(x.id)}" data-i="0">` : ""}
+      ${x.description ? `<p style="margin:0">${esc(x.description)}</p>` : ""}
+      ${(x.rules||[]).length ? `<ul>${x.rules.map(r=>`<li>${esc(r)}</li>`).join("")}</ul>` : ""}
+      <div class="stats"><div><small>Trades</small><b>${s.n}</b></div><div><small>Win rate</small><b>${pct(s.winRate)}</b></div><div><small>P&L</small><b class="${cls(s.net)}">${moneyK(s.net)}</b></div>
+        <div><small>Profit factor</small><b>${isFinite(s.pf)?nf2.format(s.pf):"—"}</b></div><div><small>R moyen</small><b>${isFinite(s.avgR)?nf2.format(s.avgR):"—"}</b></div><div><small>Espérance</small><b class="${cls(s.exp)}">${moneyK(s.exp)}</b></div></div>
+      <button class="btn sm" data-act="setup-trades" data-id="${esc(x.id)}">Voir les trades</button>
+    </div>`; }).join("")}</div>` : `<div class="card empty">Pas encore de setup. Crée ton premier pour suivre ses statistiques.</div>`}`;
+}
+
+/* ---- Réglages ---- */
+function vSettings(){
+  const st = S.settings;
+  return `
+  <div class="page-head"><div><h1>Réglages</h1><p>Instruments, comptes et listes utilisées dans tes trades.</p></div><button class="btn primary" data-act="set-save">Enregistrer</button></div>
+  <div class="grid g-2">
+    <div class="card"><div class="card-head"><h2>Instruments</h2><button class="btn sm" data-act="ins-add">+ Ajouter</button></div>
+      <p class="muted" style="margin-top:0">Valeur du point en $ et frais aller-retour par contrat (commission + frais d'échange). Vérifie les frais exacts de ton broker ou de Topstep.</p>
+      <div class="tbl-wrap"><table id="ins-tbl"><thead><tr><th>Symbole</th><th>Nom</th><th class="r">$ / point</th><th class="r">Frais A/R</th><th></th></tr></thead><tbody>
+      ${st.instruments.map((i,k)=>`<tr><td><input type="text" data-ins="${k}" data-f="sym" value="${esc(i.sym)}" style="width:80px"></td><td><input type="text" data-ins="${k}" data-f="name" value="${esc(i.name||"")}"></td><td><input type="number" step="any" data-ins="${k}" data-f="pv" value="${esc(i.pv)}" style="width:90px;text-align:right"></td><td><input type="number" step="any" data-ins="${k}" data-f="fee" value="${esc(i.fee||0)}" style="width:80px;text-align:right"></td><td><button class="btn sm ghost" data-act="ins-rm" data-k="${k}" aria-label="Retirer">×</button></td></tr>`).join("")}
+      </tbody></table></div></div>
+    <div class="grid">
+      <div class="card"><h2>Listes</h2><div class="form-grid">
+        <label class="f span4" for="set-acc"><span>Comptes <small>une ligne par compte</small></span><textarea id="set-acc" rows="2">${esc(st.accounts.join("\n"))}</textarea></label>
+        <label class="f span2" for="set-mis"><span>Erreurs</span><textarea id="set-mis" rows="7">${esc(st.mistakes.join("\n"))}</textarea></label>
+        <label class="f span2" for="set-tags"><span>Tags</span><textarea id="set-tags" rows="7">${esc(st.tags.join("\n"))}</textarea></label>
+        <label class="f span2" for="set-emo"><span>Émotions</span><textarea id="set-emo" rows="5">${esc(st.emotions.join("\n"))}</textarea></label>
+        <label class="f span2" for="set-bal"><span>Capital de départ ($)</span><input type="number" id="set-bal" value="${esc(st.startBalance)}"></label>
+      </div></div>
+      <div class="card"><h2>Sauvegarde</h2>
+        <p class="muted" style="margin-top:0">Télécharge toutes tes données (trades, journal, setups, réglages) au format JSON, ou réimporte une sauvegarde. Les captures restent sur le serveur, seules leurs références sont dans le fichier.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="export">Télécharger la sauvegarde</button><button class="btn" data-act="import">Importer un fichier JSON</button></div>
+        </div>
+      <div class="card"><h2>Compte et synchronisation</h2>
+        <p style="margin-top:0">Connecté en tant que <b>${esc(S.email||"")}</b>. Tes données sont synchronisées entre ton Mac et ton iPhone, et restent consultables hors ligne.</p>
+        <p class="muted">Serveur : ${esc((getConfig()||{}).url||"")}</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="sync-now">Synchroniser maintenant</button><button class="btn" data-act="logout">Se déconnecter</button></div>
+      </div>
+    </div>
+  </div>`;
+}
+function readSettingsForm(){
+  const st = clone(S.settings);
+  const lines = id => $(id).value.split("\n").map(s=>s.trim()).filter(Boolean);
+  const ins = [];
+  $$("#ins-tbl tbody tr").forEach(tr => { const g = f => $(`[data-f="${f}"]`, tr).value; const sym = g("sym").trim().toUpperCase(); if (sym) ins.push({ sym, name:g("name").trim(), pv:Number(g("pv"))||0, fee:Number(g("fee"))||0 }); });
+  st.instruments = ins; st.accounts = lines("#set-acc"); st.mistakes = lines("#set-mis"); st.tags = lines("#set-tags"); st.emotions = lines("#set-emo"); st.startBalance = Number($("#set-bal").value)||0;
+  return st;
+}
+
+/* ============ fiche trade (tiroir) ============ */
+function renderDrawer(){
+  const root = $("#drawer-root");
+  const t = allTrades().find(x=>x.id===S.drawer);
+  if (!t) { root.innerHTML = ""; S.drawer = null; return; }
+  const c = C(t); const imgs = t.images || [];
+  root.innerHTML = `<div class="drawer-wrap" data-act="drawer-bg"><aside class="drawer" role="dialog" aria-label="Détail du trade">
+    <div class="modal-head"><div><div class="muted">${fmtDateLong(t.date)} · ${esc(t.entryTime||"")}${t.exitTime?" → "+esc(t.exitTime):""}</div>
+      <h1>${esc(t.instrument)} <span class="chip ${t.side}" style="vertical-align:middle">${t.side==="long"?"Long":"Short"}</span> ${t.demo?'<span class="chip">exemple</span>':""}</h1></div>
+      <button class="btn ghost" data-act="drawer-close" aria-label="Fermer">✕</button></div>
+    <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:6px 0 14px"><span class="big-pnl ${cls(c.net)}">${money(c.net)}</span>
+      <span class="num muted">${c.r!=null?nf2.format(c.r)+" R":""}${c.manual?" · P&L saisi à la main":""}</span>${starsRO(t.rating)}</div>
+    <div class="facts">
+      <div><small>Quantité</small><b>${esc(t.qty)}</b></div><div><small>Entrée</small><b>${isFinite(num(t.entry))?esc(t.entry):"—"}</b></div><div><small>Sortie</small><b>${isFinite(num(t.exit))?esc(t.exit):"—"}</b></div><div><small>Points</small><b class="${cls(c.pts)}">${isFinite(c.pts)?nf2.format(c.pts):"—"}</b></div>
+      <div><small>Stop</small><b>${isFinite(num(t.stop))?esc(t.stop):"—"}</b></div><div><small>Objectif</small><b>${isFinite(num(t.target))?esc(t.target):"—"}</b></div><div><small>Risque</small><b>${c.risk?money(c.risk,false):"—"}</b></div><div><small>Durée</small><b>${c.dur!=null?c.dur+" min":"—"}</b></div>
+      <div><small>P&L brut</small><b class="${cls(c.gross)}">${isFinite(c.gross)?money(c.gross):"—"}</b></div><div><small>Frais</small><b>${money(-(num(t.fees)||0))}</b></div><div><small>Compte</small><b style="font-family:var(--f-body)">${esc(t.account||"—")}</b></div><div><small>Setup</small><b style="font-family:var(--f-body)">${esc(setupName(t.setup)||"—")}</b></div>
+    </div>
+    <div class="sec-title">Contexte</div>
+    <div class="chips">${t.followedPlan===true?'<span class="chip long">Plan respecté</span>':t.followedPlan===false?'<span class="chip short">Hors plan</span>':""}${t.emotion?`<span class="chip acc">${esc(t.emotion)}</span>`:""}${(t.tags||[]).map(x=>`<span class="chip">${esc(x)}</span>`).join("")}${(t.mistakes||[]).map(x=>`<span class="chip mis">${esc(x)}</span>`).join("")}</div>
+    <div class="sec-title">Captures d'écran (${imgs.length})</div>
+    ${imgs.length ? `<div class="shots">${imgs.map((im,i)=>`<img ${srcAttr(im)} alt="Capture ${i+1}" data-act="lb" data-set="trade" data-id="${esc(t.id)}" data-i="${i}">`).join("")}</div>` : `<p class="muted">Aucune capture. Clique sur Modifier pour en ajouter.</p>`}
+    <div class="sec-title">Notes</div>
+    <div class="notes card">${t.notes ? esc(t.notes) : '<span class="muted">Pas de note.</span>'}</div>
+    <div class="modal-foot">${t.demo ? `<span class="muted">Trade d'exemple, non modifiable.</span><span></span>` : `<button class="btn danger" data-act="del-trade" data-id="${esc(t.id)}">Supprimer</button><div style="display:flex;gap:8px"><button class="btn" data-act="dup-trade" data-id="${esc(t.id)}">Dupliquer</button><button class="btn primary" data-act="edit-trade" data-id="${esc(t.id)}">Modifier</button></div>`}</div>
+  </aside></div>`;
+}
+
+/* ============ formulaire trade ============ */
+let F = null; // état du formulaire
+function openTradeForm(t, opts={}){
+  const st = S.settings;
+  const def = { id: uid("t"), date: opts.date || todayISO(), entryTime:"", exitTime:"", instrument: st.instruments[0]?.sym || "ES", side:"long", entry:"", exit:"", qty:1, stop:"", target:"", fees:"", pnlManual:null, account: st.accounts[0]||"", setup:"", mistakes:[], tags:[], emotion:"", rating:0, followedPlan:null, notes:"", images:[] };
+  F = t ? { ...def, ...clone(t) } : def;
+  if (opts.duplicate) { F.id = uid("t"); F.images = []; F.notes = ""; }
+  F._feesTouched = !!(t && t.fees !== "" && t.fees != null);
+  F._manual = F.pnlManual !== null && F.pnlManual !== "" && F.pnlManual !== undefined;
+  F._isNew = !t || opts.duplicate;
+  if (!F._feesTouched) F.fees = autoFee();
+  renderForm();
+}
+function autoFee(){ const i = instr(F.instrument); return i ? Math.round((Number(i.fee)||0) * (num(F.qty)||0) * 100)/100 : 0; }
+function opt(list, val, empty){ return (empty!==undefined?`<option value="">${empty}</option>`:"") + list.map(o=>{ const v = typeof o==="object"?o.v:o, l = typeof o==="object"?o.l:o; return `<option value="${esc(v)}" ${String(v)===String(val)?"selected":""}>${esc(l)}</option>`; }).join(""); }
+function renderForm(){
+  const st = S.settings; const ins = st.instruments.map(i=>({v:i.sym,l:i.sym+(i.name?" · "+i.name:"")}));
+  if (!ins.find(i=>i.v===F.instrument)) ins.push({v:F.instrument,l:F.instrument});
+  const accs = [...new Set(st.accounts.concat(F.account?[F.account]:[]))];
+  const mis = [...new Set(st.mistakes.concat(F.mistakes))], tags = [...new Set(st.tags.concat(F.tags))];
+  const setups = S.setups.map(s=>({v:s.id,l:s.name}));
+  $("#modal-root").innerHTML = `<div class="overlay" data-act="modal-bg"><div class="modal" role="dialog" aria-label="Trade">
+    <div class="modal-head"><h1>${F._isNew?"Nouveau trade":"Modifier le trade"}</h1><button class="btn ghost" data-act="modal-close" aria-label="Fermer">✕</button></div>
+    <div class="sec-title">Exécution</div>
+    <div class="form-grid">
+      <label class="f" for="f-date"><span>Date</span><input type="date" id="f-date" value="${esc(F.date)}"></label>
+      <label class="f" for="f-et"><span>Heure d'entrée</span><input type="time" id="f-et" value="${esc(F.entryTime)}"></label>
+      <label class="f" for="f-xt"><span>Heure de sortie</span><input type="time" id="f-xt" value="${esc(F.exitTime)}"></label>
+      <label class="f" for="f-acc"><span>Compte</span><select id="f-acc">${opt(accs, F.account, "—")}</select></label>
+      <label class="f" for="f-ins"><span>Instrument</span><select id="f-ins">${opt(ins, F.instrument)}</select></label>
+      <label class="f"><span>Sens</span><div class="seg" role="group" aria-label="Sens"><button type="button" data-act="side" data-k="long" class="${F.side==="long"?"on":""}">Long</button><button type="button" data-act="side" data-k="short" class="${F.side==="short"?"on":""}">Short</button></div></label>
+      <label class="f" for="f-qty"><span>Contrats</span><input type="number" id="f-qty" min="0" step="1" value="${esc(F.qty)}"></label>
+      <label class="f" for="f-fees"><span>Frais ($) <small>${F._feesTouched?"":"auto"}</small></span><input type="number" id="f-fees" step="any" value="${esc(F.fees)}"></label>
+      <label class="f" for="f-entry"><span>Prix d'entrée</span><input type="number" id="f-entry" step="any" value="${esc(F.entry)}"></label>
+      <label class="f" for="f-exit"><span>Prix de sortie</span><input type="number" id="f-exit" step="any" value="${esc(F.exit)}"></label>
+      <label class="f" for="f-stop"><span>Stop</span><input type="number" id="f-stop" step="any" value="${esc(F.stop)}"></label>
+      <label class="f" for="f-tgt"><span>Objectif</span><input type="number" id="f-tgt" step="any" value="${esc(F.target)}"></label>
+    </div>
+    <div class="preview" id="f-prev"></div>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:13px"><input type="checkbox" id="f-man" ${F._manual?"checked":""}> Corriger le P&L net à la main</label>
+    <div id="f-manbox" style="margin-top:6px;${F._manual?"":"display:none"}"><label class="f" for="f-pnl" style="max-width:220px"><span>P&L net ($)</span><input type="number" id="f-pnl" step="any" value="${esc(F._manual?F.pnlManual:"")}"></label></div>
+    <div class="sec-title">Analyse</div>
+    <div class="form-grid">
+      <label class="f span2" for="f-setup"><span>Setup du playbook</span><select id="f-setup">${opt(setups, F.setup, setups.length?"— aucun —":"Crée un setup dans Playbook")}</select></label>
+      <label class="f" for="f-emo"><span>Émotion</span><select id="f-emo">${opt(st.emotions, F.emotion, "—")}</select></label>
+      <label class="f" for="f-plan"><span>Plan respecté ?</span><select id="f-plan">${opt([{v:"true",l:"Oui"},{v:"false",l:"Non"}], F.followedPlan===null||F.followedPlan===undefined?"":String(F.followedPlan), "—")}</select></label>
+      <div class="f span4"><span>Note d'exécution</span><div class="stars" id="f-stars">${[1,2,3,4,5].map(i=>`<button type="button" data-act="star" data-k="${i}" class="${i<=F.rating?"on":""}" aria-label="${i} étoile${i>1?"s":""}">★</button>`).join("")}</div></div>
+      <div class="f span4"><span>Erreurs</span><div class="chips">${mis.map(m=>`<span class="chip toggle-chip misc ${F.mistakes.includes(m)?"on":""}" data-act="tog" data-k="mistakes" data-v="${esc(m)}" tabindex="0" role="button">${esc(m)}</span>`).join("")}</div></div>
+      <div class="f span4"><span>Tags <small>(annonce macro, contexte…)</small></span><div class="chips">${tags.map(m=>`<span class="chip toggle-chip ${F.tags.includes(m)?"on":""}" data-act="tog" data-k="tags" data-v="${esc(m)}" tabindex="0" role="button">${esc(m)}</span>`).join("")}<input type="text" id="f-newtag" placeholder="+ tag" style="width:110px;padding:2px 8px;border-radius:999px;font-size:12px"></div></div>
+    </div>
+    <div class="sec-title">Captures d'écran</div>
+    <div class="thumb-row" id="f-imgs"></div>
+    <div class="drop" id="f-drop" data-act="pick" style="margin-top:8px"><b>Glisse tes captures ici, colle-les (⌘V)</b> ou clique pour choisir des fichiers<div id="f-up" class="muted" style="font-size:12px"></div></div>
+    <div class="sec-title">Notes</div>
+    <textarea id="f-notes" rows="5" placeholder="Pourquoi ce trade, contexte, gestion, ce que tu ferais différemment…">${esc(F.notes)}</textarea>
+    <div class="modal-foot"><span class="muted" id="f-err"></span><div style="display:flex;gap:8px"><button class="btn" data-act="modal-close">Annuler</button><button class="btn primary" data-act="save-trade">Enregistrer</button></div></div>
+  </div></div>`;
+  renderFormImgs(); updatePreview();
+  S.dropTarget = async files => { $("#f-up").textContent = "Envoi en cours…"; const r = await uploadImages(files); F.images.push(...r); $("#f-up").textContent = r.length ? r.length+" capture(s) ajoutée(s)" : ""; renderFormImgs(); };
+  setTimeout(()=>{ const e=$("#f-entry"); if (e && F._isNew) $("#f-date") && e.focus(); }, 30);
+}
+function renderFormImgs(){ const el = $("#f-imgs"); if (!el) return; el.innerHTML = F.images.map((im,i)=>`<div class="thumb" data-act="lb" data-set="form" data-i="${i}"><img ${srcAttr(im)} alt="Capture ${i+1}"><button class="x" data-act="f-rmimg" data-i="${i}" aria-label="Retirer">×</button></div>`).join(""); }
+function readForm(){
+  F.date = $("#f-date").value; F.entryTime = $("#f-et").value; F.exitTime = $("#f-xt").value; F.account = $("#f-acc").value;
+  F.instrument = $("#f-ins").value; F.qty = $("#f-qty").value === "" ? "" : Number($("#f-qty").value);
+  F.entry = $("#f-entry").value === "" ? "" : Number($("#f-entry").value); F.exit = $("#f-exit").value === "" ? "" : Number($("#f-exit").value);
+  F.stop = $("#f-stop").value === "" ? "" : Number($("#f-stop").value); F.target = $("#f-tgt").value === "" ? "" : Number($("#f-tgt").value);
+  F.fees = $("#f-fees").value === "" ? 0 : Number($("#f-fees").value);
+  F._manual = $("#f-man").checked; F.pnlManual = F._manual && $("#f-pnl").value !== "" ? Number($("#f-pnl").value) : null;
+  F.setup = $("#f-setup").value; F.emotion = $("#f-emo").value; const p = $("#f-plan").value; F.followedPlan = p===""?null:p==="true";
+  F.notes = $("#f-notes").value;
+}
+function updatePreview(){
+  if (!$("#f-prev")) return;
+  readForm(); const c = calc(F); const auto = calc({...F, pnlManual:null});
+  $("#f-prev").innerHTML = `<div><small class="muted">P&L net</small><div class="num ${cls(c.net)}">${money(c.net)}</div></div>
+    <div><small class="muted">Points</small><div class="num">${isFinite(auto.pts)?nf2.format(auto.pts):"—"}</div></div>
+    <div><small class="muted">Brut</small><div class="num">${isFinite(auto.gross)?money(auto.gross):"—"}</div></div>
+    <div><small class="muted">R multiple</small><div class="num">${c.r!=null?nf2.format(c.r)+" R":"—"}</div></div>
+    <div><small class="muted">Risque</small><div class="num">${c.risk?money(c.risk,false):"—"}</div></div>
+    <div class="muted" style="font-size:12px">${instr(F.instrument)?`1 point ${esc(F.instrument)} = ${nf2.format(instr(F.instrument).pv)} $`:"Instrument inconnu : ajoute-le dans Réglages"}${c.manual?" · calcul auto : "+money(auto.net):""}</div>`;
+}
+async function submitTrade(){
+  readForm();
+  const err = m => { $("#f-err").textContent = m; $("#f-err").style.color = "var(--loss)"; };
+  if (!F.date) return err("Indique la date.");
+  if (!(num(F.qty) > 0)) return err("Indique le nombre de contrats.");
+  if (!F._manual && (!isFinite(num(F.entry)) || !isFinite(num(F.exit)))) return err("Indique les prix d'entrée et de sortie, ou corrige le P&L à la main.");
+  if (F._manual && F.pnlManual === null) return err("Indique le P&L net corrigé.");
+  const t = {}; ["id","date","entryTime","exitTime","instrument","side","entry","exit","qty","stop","target","fees","pnlManual","account","setup","mistakes","tags","emotion","rating","followedPlan","notes","images"].forEach(k => t[k] = F[k]);
+  const btn = $('[data-act="save-trade"]'); btn.disabled = true; btn.textContent = "Enregistrement…";
+  const removed = F._removed || [];
+  try { await saveTrade(t); purgeImages(removed); closeModal(); toast("Trade enregistré"); S.drawer = t.id; renderDrawer(); }
+  catch(e) { btn.disabled = false; btn.textContent = "Enregistrer"; }
+}
+function closeModal(){ $("#modal-root").innerHTML = ""; F = null; SF = null; S.dropTarget = S.view==="journal" ? journalDrop : null; }
+
+/* ---- formulaire setup ---- */
+let SF = null;
+function openSetupForm(s){
+  SF = s ? clone(s) : { id: uid("s"), name:"", description:"", rules:[], images:[] };
+  SF._isNew = !s;
+  $("#modal-root").innerHTML = `<div class="overlay" data-act="modal-bg"><div class="modal" role="dialog" aria-label="Setup" style="width:min(640px,100%)">
+    <div class="modal-head"><h1>${SF._isNew?"Nouveau setup":"Modifier le setup"}</h1><button class="btn ghost" data-act="modal-close" aria-label="Fermer">✕</button></div>
+    <div class="grid" style="gap:10px;margin-top:8px">
+      <label class="f" for="s-name"><span>Nom</span><input type="text" id="s-name" value="${esc(SF.name)}" placeholder="ex. ORB 5 min, Fade CPI…"></label>
+      <label class="f" for="s-desc"><span>Description</span><textarea id="s-desc" rows="3">${esc(SF.description)}</textarea></label>
+      <label class="f" for="s-rules"><span>Règles d'entrée <small>une par ligne</small></span><textarea id="s-rules" rows="5">${esc((SF.rules||[]).join("\n"))}</textarea></label>
+      <div class="f"><span>Captures d'exemple</span><div class="thumb-row" id="s-imgs"></div><div class="drop" data-act="pick" style="margin-top:6px"><b>Glisse, colle ou clique</b> pour ajouter un graphique type <span id="s-up" class="muted"></span></div></div>
+    </div>
+    <div class="modal-foot">${SF._isNew?"<span></span>":`<button class="btn danger" data-act="del-setup">Supprimer</button>`}<div style="display:flex;gap:8px"><button class="btn" data-act="modal-close">Annuler</button><button class="btn primary" data-act="save-setup">Enregistrer</button></div></div>
+  </div></div>`;
+  const ri = () => { $("#s-imgs").innerHTML = SF.images.map((im,i)=>`<div class="thumb"><img ${srcAttr(im)} alt="Exemple ${i+1}"><button class="x" data-act="s-rmimg" data-i="${i}" aria-label="Retirer">×</button></div>`).join(""); };
+  SF._ri = ri; ri();
+  S.dropTarget = async files => { $("#s-up").textContent = "· envoi…"; const r = await uploadImages(files); SF.images.push(...r); $("#s-up").textContent = ""; ri(); };
+}
+
+/* ============ lightbox ============ */
+let LB = { list:[], i:0 };
+function openLB(list, i){ if (!list.length) return; LB = { list, i }; showLB(); $("#lightbox").classList.add("on"); }
+function showLB(){ const b=$("#lightbox"); const im=LB.list[LB.i]; const el=$("img",b); el.src = srcOf(im); if (im.path) el.dataset.path = im.path; else delete el.dataset.path; $(".lb-c",b).textContent = (LB.i+1)+" / "+LB.list.length; $(".lb-p",b).style.display=$(".lb-n",b).style.display = LB.list.length>1?"":"none"; }
+$("#lightbox").addEventListener("click", e => {
+  if (e.target.closest(".lb-p")) { LB.i = (LB.i - 1 + LB.list.length) % LB.list.length; showLB(); }
+  else if (e.target.closest(".lb-n")) { LB.i = (LB.i + 1) % LB.list.length; showLB(); }
+  else if (e.target.tagName !== "IMG") $("#lightbox").classList.remove("on");
+});
+
+/* ============ événements ============ */
+function journalDrop(files){ return (async () => { const r = await uploadImages(files); const prev = S.days[S.jDate] || {}; S.jImgs = (S.jImgs || prev.images || []).concat(r); $("#j-imgs").innerHTML = S.jImgs.map((im,i)=>`<div class="thumb" data-act="lb" data-set="day" data-i="${i}"><img ${srcAttr(im)} alt="Capture ${i+1}"><button class="x" data-act="j-rmimg" data-i="${i}" aria-label="Retirer">×</button></div>`).join(""); $("#j-msg").textContent = "Captures ajoutées : pense à enregistrer."; })(); }
+
+document.addEventListener("click", async e => {
+  const el = e.target.closest("[data-act]"); if (!el) return;
+  const a = el.dataset.act;
+  if (a === "x" ) return;
+  switch (a) {
+    case "new-trade": e.preventDefault(); openTradeForm(null, { date: el.dataset.date }); break;
+    case "open": S.drawer = el.dataset.id; renderDrawer(); break;
+    case "drawer-close": S.drawer = null; renderDrawer(); break;
+    case "drawer-bg": if (e.target === el) { S.drawer = null; renderDrawer(); } break;
+    case "edit-trade": openTradeForm(allTrades().find(t=>t.id===el.dataset.id)); break;
+    case "dup-trade": openTradeForm(allTrades().find(t=>t.id===el.dataset.id), { duplicate:true }); break;
+    case "del-trade":
+      if (!el.classList.contains("armed")) { el.classList.add("armed"); el.textContent = "Confirmer la suppression"; setTimeout(()=>{ el.classList.remove("armed"); el.textContent="Supprimer"; }, 4000); }
+      else { await deleteTrade(el.dataset.id).catch(()=>{}); S.drawer = null; renderDrawer(); toast("Trade supprimé"); }
+      break;
+    case "modal-close": closeModal(); break;
+    case "modal-bg": if (e.target === el) closeModal(); break;
+    case "side": F.side = el.dataset.k; $$('[data-act="side"]').forEach(b=>b.classList.toggle("on", b===el)); updatePreview(); break;
+    case "star": F.rating = Number(el.dataset.k) === F.rating ? 0 : Number(el.dataset.k); $$("#f-stars button").forEach((b,i)=>b.classList.toggle("on", i < F.rating)); break;
+    case "tog": { const arr = F[el.dataset.k]; const v = el.dataset.v; const i = arr.indexOf(v); if (i>=0) arr.splice(i,1); else arr.push(v); el.classList.toggle("on"); break; }
+    case "f-rmimg": e.stopPropagation(); (F._removed = F._removed || []).push(...F.images.splice(Number(el.dataset.i),1)); renderFormImgs(); break;
+    case "s-rmimg": e.stopPropagation(); SF.images.splice(Number(el.dataset.i),1); SF._ri(); break;
+    case "j-rmimg": { e.stopPropagation(); const prev = S.days[S.jDate]||{}; S.jImgs = (S.jImgs || prev.images || []).slice(); S.jImgs.splice(Number(el.dataset.i),1); el.parentElement.remove(); $("#j-msg").textContent = "Capture retirée : pense à enregistrer."; break; }
+    case "pick": $("#file-pick").click(); break;
+    case "save-trade": submitTrade(); break;
+    case "lb": {
+      const set = el.dataset.set, i = Number(el.dataset.i);
+      if (set==="trade") openLB(allTrades().find(t=>t.id===el.dataset.id).images||[], i);
+      else if (set==="form") openLB(F.images, i);
+      else if (set==="setup") openLB((allSetups().find(s=>s.id===el.dataset.id)||{}).images||[], i);
+      else if (set==="day") openLB(S.jImgs || (S.days[S.jDate]||{}).images || [], i);
+      break; }
+    case "period": S.filter.period = el.dataset.k; render(); break;
+    case "cal": { const k = Number(el.dataset.k); if (!k) { const d=new Date(); S.calMonth = new Date(d.getFullYear(), d.getMonth(), 1); } else S.calMonth = new Date(S.calMonth.getFullYear(), S.calMonth.getMonth()+k, 1); render(); break; }
+    case "day": S.jDate = el.dataset.d; S.jImgs = null; location.hash = "journal"; break;
+    case "jdate": S.jDate = el.dataset.d; S.jImgs = null; render(); break;
+    case "j-save": {
+      const d = journalDraft(); el.disabled = true;
+      try { await saveDay(d); S.jImgs = null; $("#j-msg") && ($("#j-msg").textContent = "Journal enregistré"); toast("Journal enregistré"); } catch(err) {}
+      el.disabled = false; break; }
+    case "new-setup": openSetupForm(null); break;
+    case "edit-setup": openSetupForm(S.setups.find(s=>s.id===el.dataset.id)); break;
+    case "save-setup": {
+      SF.name = $("#s-name").value.trim(); SF.description = $("#s-desc").value.trim(); SF.rules = $("#s-rules").value.split("\n").map(s=>s.trim()).filter(Boolean);
+      if (!SF.name) { toast("Donne un nom au setup."); break; }
+      const body = { id:SF.id, name:SF.name, description:SF.description, rules:SF.rules, images:SF.images };
+      try { await saveSetup(body); closeModal(); toast("Setup enregistré"); } catch(err) {}
+      break; }
+    case "del-setup":
+      if (!el.classList.contains("armed")) { el.classList.add("armed"); el.textContent = "Confirmer"; setTimeout(()=>{ el.classList.remove("armed"); el.textContent="Supprimer"; }, 4000); }
+      else { await deleteSetup(SF.id).catch(()=>{}); closeModal(); toast("Setup supprimé"); }
+      break;
+    case "setup-trades": S.tfilter.setup = el.dataset.id; location.hash = "trades"; break;
+    case "ins-add": { const st = readSettingsForm(); st.instruments.push({ sym:"NEW", name:"", pv:1, fee:0 }); S.settings = st; S.settingsVer++; render(); break; }
+    case "ins-rm": { const st = readSettingsForm(); st.instruments.splice(Number(el.dataset.k),1); S.settings = st; S.settingsVer++; render(); break; }
+    case "set-save": { const st = readSettingsForm(); try { await saveSettings(st); toast("Réglages enregistrés"); } catch(err) {} break; }
+    case "export": {
+      const data = { exportedAt: new Date().toISOString(), settings: S.settings, setups: S.setups, days: S.days, trades: S.trades };
+      const blob = new Blob([JSON.stringify(data, null, 1)], { type:"application/json" });
+      const u = URL.createObjectURL(blob); const ln = document.createElement("a"); ln.href = u; ln.download = "journal-trading-" + todayISO() + ".json";
+      document.body.appendChild(ln); ln.click(); ln.remove(); setTimeout(()=>URL.revokeObjectURL(u), 4000);
+      break; }
+    case "sync-now": await flush(); await pull(); toast("Synchronisation terminée"); break;
+    case "logout": if (!el.classList.contains("armed")) { el.classList.add("armed","danger"); el.textContent = "Confirmer la déconnexion"; setTimeout(()=>{ el.classList.remove("armed","danger"); el.textContent="Se déconnecter"; }, 4000); } else { if (S.outbox.length) await flush(); LS.del("tj-cache-"+S.uid); LS.del("tj-outbox-"+S.uid); await SB.auth.signOut(); location.reload(); } break;
+    case "import": $("#json-pick").click(); break;
+  }
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") { if ($("#lightbox").classList.contains("on")) $("#lightbox").classList.remove("on"); else if (F || SF) closeModal(); else if (S.drawer) { S.drawer=null; renderDrawer(); } }
+  if ($("#lightbox").classList.contains("on")) { if (e.key==="ArrowLeft") $(".lb-p").click(); if (e.key==="ArrowRight") $(".lb-n").click(); }
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches(".toggle-chip")) { e.preventDefault(); e.target.click(); }
+  if (e.key === "Enter" && e.target.id === "f-newtag") { e.preventDefault(); const v = e.target.value.trim(); if (v && !F.tags.includes(v)) { readForm(); F.tags.push(v); renderForm(); $("#f-newtag").focus(); } }
+});
+document.addEventListener("input", e => {
+  const id = e.target.id;
+  if (F && /^f-(qty|ins|entry|exit|stop|fees|pnl|tgt)$/.test(id)) {
+    if (id === "f-fees") F._feesTouched = true;
+    if ((id === "f-qty" || id === "f-ins") && !F._feesTouched) { readForm(); $("#f-fees").value = autoFee(); }
+    updatePreview();
+  }
+  if (id === "tf-q") { S.tfilter.q = e.target.value; clearTimeout(S._qT); S._qT = setTimeout(()=>{ render(); const q=$("#tf-q"); q.focus(); q.setSelectionRange(q.value.length,q.value.length); }, 250); }
+});
+document.addEventListener("change", async e => {
+  const id = e.target.id;
+  if (id === "f-man") { $("#f-manbox").style.display = e.target.checked ? "" : "none"; if (e.target.checked && $("#f-pnl").value==="") { readForm(); $("#f-pnl").value = Math.round(calc({...F,pnlManual:null}).net*100)/100; } updatePreview(); }
+  if (id === "f-ins") { if (!F._feesTouched) { readForm(); $("#f-fees").value = autoFee(); } updatePreview(); }
+  if (id === "flt-acc") { S.filter.account = e.target.value; render(); }
+  if (id === "flt-ins") { S.filter.instrument = e.target.value; render(); }
+  if (id === "tf-setup") { S.tfilter.setup = e.target.value; render(); }
+  if (id === "tf-res") { S.tfilter.result = e.target.value; render(); }
+  if (id === "tf-from") { S.tfilter.from = e.target.value; render(); }
+  if (id === "tf-to") { S.tfilter.to = e.target.value; render(); }
+  if (id === "j-pick" && e.target.value) { S.jDate = e.target.value; S.jImgs = null; render(); }
+  if (id === "file-pick") { const files = [...e.target.files]; e.target.value = ""; if (S.dropTarget) S.dropTarget(files); }
+  if (id === "json-pick") { const f = e.target.files[0]; e.target.value = ""; if (f) importJSON(f); }
+});
+document.addEventListener("paste", e => {
+  if (!S.dropTarget) return;
+  const files = [...(e.clipboardData?.items || [])].filter(i => i.kind === "file" && /^image\//.test(i.type)).map(i => i.getAsFile()).filter(Boolean);
+  if (files.length) { e.preventDefault(); S.dropTarget(files); }
+});
+["dragover","dragenter"].forEach(ev => document.addEventListener(ev, e => { const d = e.target.closest && e.target.closest(".drop"); if (d) { e.preventDefault(); d.classList.add("over"); } }));
+document.addEventListener("dragleave", e => { const d = e.target.closest && e.target.closest(".drop"); if (d) d.classList.remove("over"); });
+document.addEventListener("drop", e => { const d = e.target.closest && e.target.closest(".drop"); if (!d) return; e.preventDefault(); d.classList.remove("over"); const files = [...e.dataTransfer.files]; if (S.dropTarget && files.length) S.dropTarget(files); });
+
+async function importJSON(file){
+  try {
+    const data = JSON.parse(await file.text());
+    if (data.settings) await saveSettings({...clone(DEFAULT_SETTINGS), ...data.settings});
+    for (const s of data.setups||[]) if (s.id) await saveSetup(s);
+    for (const [k,v] of Object.entries(data.days||{})) await saveDay({...v, date:k});
+    let n = 0; for (const t of data.trades||[]) if (t.id && t.date) { await saveTrade(t); n++; }
+    toast(n + " trades importés · synchronisation en cours");
+  } catch(err) { toast("Fichier illisible : choisis une sauvegarde JSON exportée depuis cette page."); }
+}
+
+/* ============ routage ============ */
+const VIEWS = ["dashboard","trades","calendrier","journal","playbook","reglages"];
+function route(){
+  const h = location.hash.replace("#",""); S.view = VIEWS.includes(h) ? h : "dashboard";
+  if (!F && !SF) S.dropTarget = S.view === "journal" ? journalDrop : null;
+  render();
+}
+window.addEventListener("hashchange", route);
+const mq = window.matchMedia("(prefers-color-scheme: dark)"); mq.addEventListener && mq.addEventListener("change", () => S.view==="dashboard" && render());
+new MutationObserver(() => S.view==="dashboard" && render()).observe(document.documentElement, { attributes:true, attributeFilter:["data-theme"] });
+/* ============ configuration, connexion, démarrage ============ */
+function getConfig(){
+  const c = window.TJ_CONFIG || {};
+  if (c.SUPABASE_URL && c.SUPABASE_ANON_KEY) return { url: c.SUPABASE_URL.trim().replace(/\/+$/,""), key: c.SUPABASE_ANON_KEY.trim() };
+  const l = LS.get("tj-config", null);
+  return l && l.url && l.key ? l : null;
+}
+function gate(html){ const g = $("#gate"); g.innerHTML = html ? `<div class="gate-card">${html}</div>` : ""; g.classList.toggle("on", !!html); }
+const LOGO = `<span class="brand-mark" style="width:44px;height:44px;border-radius:12px"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M4 17l5-6 4 3 7-9"/><path d="M15 5h5v5"/></svg></span>`;
+function showSetup(err){
+  gate(`${LOGO}<h1>Connecter ta base de données</h1>
+    <p class="muted">Colle l'adresse et la clé publique de ton projet Supabase. Tu les trouves dans Supabase, menu <b>Project Settings → API Keys</b>. À faire une seule fois par appareil.</p>
+    <form id="setup-form" class="grid" style="gap:10px">
+      <label class="f" for="cfg-url"><span>Project URL</span><input type="text" id="cfg-url" placeholder="https://xxxxxxxx.supabase.co" autocomplete="off" autocapitalize="off" spellcheck="false" required></label>
+      <label class="f" for="cfg-key"><span>Clé « anon » / « publishable »</span><textarea id="cfg-key" rows="3" placeholder="eyJhbGciOi… ou sb_publishable_…" autocapitalize="off" spellcheck="false" required></textarea></label>
+      <p class="err">${esc(err||"")}</p>
+      <button class="btn primary" type="submit">Continuer</button>
+    </form>`);
+  $("#setup-form").addEventListener("submit", e => {
+    e.preventDefault();
+    const url = $("#cfg-url").value.trim().replace(/\/+$/,""), key = $("#cfg-key").value.trim();
+    if (!/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)$/i.test(url)) return showSetup("L'adresse doit ressembler à https://xxxxxxxx.supabase.co");
+    if (key.length < 30) return showSetup("La clé semble incomplète : copie-la en entier.");
+    LS.set("tj-config", { url, key }); boot();
+  });
+}
+const AUTH_ERR = m => /invalid login/i.test(m) ? "Email ou mot de passe incorrect." : /not confirmed/i.test(m) ? "Ton email n'est pas encore confirmé : clique sur le lien reçu par email, ou désactive la confirmation dans Supabase (voir le guide)." : /already registered|already exists/i.test(m) ? "Un compte existe déjà avec cet email : connecte-toi." : /password/i.test(m) && /6|short|least/i.test(m) ? "Le mot de passe doit faire au moins 6 caractères." : /signups? not allowed|disabled/i.test(m) ? "Les inscriptions sont fermées sur ce serveur." : /fetch|network/i.test(m) ? "Impossible de joindre le serveur : vérifie ta connexion et l'adresse du projet." : m;
+function showAuth(mode="login", err="", info=""){
+  gate(`${LOGO}<h1>${mode==="login"?"Connexion":"Créer ton compte"}</h1>
+    <p class="muted">${mode==="login"?"Utilise le même compte sur ton Mac et ton iPhone pour retrouver tes trades.":"Ce compte protège ton journal. Tu l'utiliseras sur tous tes appareils."}</p>
+    <form id="auth-form" class="grid" style="gap:10px">
+      <label class="f" for="au-mail"><span>Email</span><input type="email" id="au-mail" autocomplete="email" required></label>
+      <label class="f" for="au-pass"><span>Mot de passe</span><input type="password" id="au-pass" autocomplete="${mode==="login"?"current-password":"new-password"}" minlength="6" required></label>
+      <p class="err">${esc(err)}</p><p class="ok">${esc(info)}</p>
+      <button class="btn primary" type="submit">${mode==="login"?"Se connecter":"Créer mon compte"}</button>
+      <button class="btn ghost" type="button" id="au-switch">${mode==="login"?"Pas encore de compte ? Créer un compte":"J'ai déjà un compte : me connecter"}</button>
+      <button class="btn ghost sm" type="button" id="au-cfg">Changer de serveur</button>
+    </form>`);
+  $("#au-switch").onclick = () => showAuth(mode==="login"?"signup":"login");
+  $("#au-cfg").onclick = () => { LS.del("tj-config"); location.reload(); };
+  $("#auth-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const email = $("#au-mail").value.trim(), password = $("#au-pass").value;
+    const btn = $('#auth-form button[type="submit"]'); btn.disabled = true; btn.textContent = "Patiente…";
+    try {
+      if (mode === "signup") {
+        const { data, error } = await SB.auth.signUp({ email, password });
+        if (error) throw error;
+        if (!data.session) return showAuth("login", "", "Compte créé. Confirme ton email via le lien reçu, puis connecte-toi.");
+        startApp(data.session.user);
+      } else {
+        const { data, error } = await SB.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        startApp(data.user);
+      }
+    } catch(er) { showAuth(mode, AUTH_ERR(er.message || String(er))); }
+  });
+}
+async function boot(){
+  const cfg = getConfig();
+  if (!cfg) return showSetup();
+  if (!window.supabase || !window.supabase.createClient) {
+    return gate(`${LOGO}<h1>Connexion requise</h1><p class="muted">Le premier lancement a besoin d'internet pour charger l'application. Vérifie ta connexion puis relance.</p><button class="btn primary" onclick="location.reload()">Réessayer</button>`);
+  }
+  try { SB = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:false, storageKey:"tj-auth" } }); }
+  catch(e) { LS.del("tj-config"); return showSetup("Adresse ou clé invalide."); }
+  let session = null;
+  try { session = (await SB.auth.getSession()).data.session; } catch(e) {}
+  if (!session) return showAuth();
+  startApp(session.user);
+}
+function startApp(user){
+  if (S.uid === user.id) return;
+  S.uid = user.id; S.email = user.email;
+  S.rec = LS.get("tj-cache-"+S.uid, {}); S.outbox = LS.get("tj-outbox-"+S.uid, []);
+  rebuild(); gate("");
+  route(); setSync();
+  pull().then(flush); subscribe();
+  SB.auth.onAuthStateChange(ev => { if (ev === "SIGNED_OUT") location.reload(); });
+}
+window.addEventListener("online", () => { flush().then(pull); });
+window.addEventListener("offline", setSync);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && S.uid) { flush().then(pull); } });
+setInterval(() => { if (S.uid && S.outbox.length) flush(); }, 30000);
+if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("./sw.js").catch(()=>{});
+boot();
+</script>
+</body>
+</html>

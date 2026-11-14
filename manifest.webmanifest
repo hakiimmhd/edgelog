@@ -1,0 +1,17 @@
+{
+  "name": "Journal de Trading",
+  "short_name": "Journal",
+  "description": "Journal de trading personnel : trades, captures, calendrier, journal quotidien et playbook.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0e15",
+  "theme_color": "#0b0e15",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
