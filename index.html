@@ -1580,7 +1580,15 @@ window.addEventListener("online", () => { flush().then(pull); });
 window.addEventListener("offline", setSync);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && S.uid) { flush().then(pull); } });
 setInterval(() => { if (S.uid && S.outbox.length) flush(); }, 30000);
-if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("./sw.js").catch(()=>{});
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  const hadCtl = !!navigator.serviceWorker.controller; let reloaded = false;
+  navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" }).then(reg => {
+    const check = () => reg.update().catch(()=>{});
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") check(); });
+    setInterval(check, 30*60*1000);
+  }).catch(()=>{});
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadCtl && !reloaded && !F && !SF) { reloaded = true; location.reload(); } });
+}
 boot();
 </script>
 </body>
